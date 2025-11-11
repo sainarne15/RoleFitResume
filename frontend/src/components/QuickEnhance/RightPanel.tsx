@@ -15,22 +15,40 @@ export default function RightPanel({
 }: RightPanelProps) {
   const [showHighlights, setShowHighlights] = useState(true);
 
-  // Calculate highlighted text - only show additions
+  // Calculate highlighted text - only show NEW additions
   const highlightedText = useMemo(() => {
     if (!enhancedResume || !showHighlights) return enhancedResume;
 
-    const originalWords = new Set(originalResume.toLowerCase().split(/\s+/));
-    const enhancedWords = enhancedResume.split(/\s+/);
+    // Split both into words and normalize for comparison
+    const originalWords = originalResume
+      .toLowerCase()
+      .replace(/[.,!?;:()\[\]{}]/g, '') // Remove punctuation
+      .split(/\s+/)
+      .filter(w => w.length > 0);
 
-    return enhancedWords.map((word, idx) => {
-      const cleanWord = word.toLowerCase().replace(/[.,!?;:()]/g, '');
-      const isNew = !originalWords.has(cleanWord);
+    const originalWordSet = new Set(originalWords);
 
-      if (isNew && cleanWord.length > 0) {
-        return `<span key="${idx}" class="highlight-new">${word}</span>`;
-      }
-      return word;
-    }).join(' ');
+    // Process enhanced resume line by line to preserve structure
+    const enhancedLines = enhancedResume.split('\n');
+
+    return enhancedLines.map(line => {
+      const words = line.split(/(\s+)/); // Keep spaces
+
+      return words.map((word, idx) => {
+        if (!word.trim()) return word; // Preserve spaces
+
+        const cleanWord = word
+          .toLowerCase()
+          .replace(/[.,!?;:()\[\]{}]/g, '')
+          .trim();
+
+        // Only highlight if word is truly new (not in original at all)
+        if (cleanWord.length > 2 && !originalWordSet.has(cleanWord)) {
+          return `<span class="highlight-new">${word}</span>`;
+        }
+        return word;
+      }).join('');
+    }).join('\n');
   }, [enhancedResume, originalResume, showHighlights]);
 
   const wordCount = enhancedResume ? enhancedResume.split(/\s+/).length : 0;
@@ -76,19 +94,85 @@ export default function RightPanel({
 
       <div className="bg-gradient-to-br from-gray-50 to-slate-50 p-5 rounded-lg border-2 border-gray-200 max-h-[700px] overflow-y-auto custom-scrollbar">
         {enhancedResume ? (
-          showHighlights ? (
-            <div
-              className="enhanced-text text-gray-900 leading-relaxed whitespace-pre-wrap"
-              dangerouslySetInnerHTML={{ __html: highlightedText }}
-            />
-          ) : (
-            <textarea
-              value={enhancedResume}
-              readOnly
-              className="w-full h-full enhanced-text text-gray-900 bg-transparent border-none focus:outline-none resize-none"
-              style={{ minHeight: '600px' }}
-            />
-          )
+          <div className="text-sm text-gray-900 space-y-1">
+            {enhancedResume.split('\n').map((line, idx) => {
+              const trimmedLine = line.trim();
+
+              // Detect line types
+              const isBullet = /^[•\-●○*►]/.test(trimmedLine);
+              const isHeader = /^[A-Z\s]{3,}$/.test(trimmedLine) ||
+                              /^(EXPERIENCE|EDUCATION|SKILLS|SUMMARY|PROFILE|OBJECTIVE)/i.test(trimmedLine);
+              const isEmpty = !trimmedLine;
+
+              if (isEmpty) {
+                return <div key={idx} className="h-2" />;
+              } else if (isHeader) {
+                return (
+                  <div key={idx} className="font-bold text-base text-gray-900 mt-4 mb-2 uppercase tracking-wide">
+                    {line}
+                  </div>
+                );
+              } else if (isBullet) {
+                // For bullet points, highlight new words if enabled
+                if (showHighlights) {
+                  const words = line.split(/(\s+)/);
+                  const originalWordsSet = new Set(
+                    originalResume.toLowerCase()
+                      .replace(/[.,!?;:()\[\]{}]/g, '')
+                      .split(/\s+/)
+                  );
+
+                  return (
+                    <div key={idx} className="pl-4 leading-relaxed">
+                      {words.map((word, widx) => {
+                        if (!word.trim()) return word;
+                        const cleanWord = word.toLowerCase().replace(/[.,!?;:()\[\]{}]/g, '');
+                        if (cleanWord.length > 2 && !originalWordsSet.has(cleanWord)) {
+                          return <span key={widx} className="highlight-new">{word}</span>;
+                        }
+                        return word;
+                      })}
+                    </div>
+                  );
+                } else {
+                  return (
+                    <div key={idx} className="pl-4 leading-relaxed text-gray-800">
+                      {line}
+                    </div>
+                  );
+                }
+              } else {
+                // Regular lines
+                if (showHighlights) {
+                  const words = line.split(/(\s+)/);
+                  const originalWordsSet = new Set(
+                    originalResume.toLowerCase()
+                      .replace(/[.,!?;:()\[\]{}]/g, '')
+                      .split(/\s+/)
+                  );
+
+                  return (
+                    <div key={idx} className="leading-relaxed">
+                      {words.map((word, widx) => {
+                        if (!word.trim()) return word;
+                        const cleanWord = word.toLowerCase().replace(/[.,!?;:()\[\]{}]/g, '');
+                        if (cleanWord.length > 2 && !originalWordsSet.has(cleanWord)) {
+                          return <span key={widx} className="highlight-new">{word}</span>;
+                        }
+                        return word;
+                      })}
+                    </div>
+                  );
+                } else {
+                  return (
+                    <div key={idx} className="leading-relaxed text-gray-800">
+                      {line}
+                    </div>
+                  );
+                }
+              }
+            })}
+          </div>
         ) : (
           <div className="text-center py-32">
             <div className="text-6xl mb-4">📝</div>
