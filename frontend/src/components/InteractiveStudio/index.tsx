@@ -69,7 +69,6 @@ export default function InteractiveStudio({
     const newBlocks: Block[] = [];
     let blockId = 0;
 
-    // Helper to get section display title
     const getSectionTitle = (key: string) => {
       const titles: Record<string, string> = {
         'summary': 'SUMMARY',
@@ -78,9 +77,9 @@ export default function InteractiveStudio({
         'education': 'EDUCATION',
         'projects': 'PROJECTS',
         'certifications': 'CERTIFICATIONS',
-        'awards': 'AWARDS',
+        'awards': 'AWARDS & ACHIEVEMENTS',
         'publications': 'PUBLICATIONS',
-        'volunteer': 'VOLUNTEER',
+        'volunteer': 'VOLUNTEER EXPERIENCE',
         'languages': 'LANGUAGES',
         'interests': 'INTERESTS'
       };
@@ -103,7 +102,7 @@ export default function InteractiveStudio({
       }
     }
 
-    // Skills - each line is a block
+    // Skills
     if (sections.skills?.blocks) {
       sections.skills.blocks.forEach((skillBlock: any) => {
         newBlocks.push({
@@ -118,7 +117,7 @@ export default function InteractiveStudio({
       });
     }
 
-    // Experience - each bullet is a block
+    // Experience
     if (sections.experience?.jobs) {
       sections.experience.jobs.forEach((job: any, jobIdx: number) => {
         job.bullets.forEach((bullet: string) => {
@@ -133,21 +132,6 @@ export default function InteractiveStudio({
             status: 'original',
             type: 'bullet'
           });
-        });
-      });
-    }
-
-    // Education
-    if (sections.education?.blocks) {
-      sections.education.blocks.forEach((block: any) => {
-        newBlocks.push({
-          id: `block-${blockId++}`,
-          sectionKey: 'education',
-          sectionTitle: getSectionTitle('education'),
-          text: block.text,
-          enhancedText: '',
-          status: 'original',
-          type: 'text'
         });
       });
     }
@@ -200,7 +184,7 @@ export default function InteractiveStudio({
     setBlocks(newBlocks);
   };
 
-  // BATCH ENHANCE ALL - New workflow!
+  // BATCH ENHANCE ALL - Skip education!
   const handleEnhanceAll = async () => {
     if (!jobDescription || !apiKey) {
       alert('Please provide job description and API key');
@@ -208,13 +192,16 @@ export default function InteractiveStudio({
     }
 
     setIsLoading(true);
-    setEnhancementProgress({ current: 0, total: blocks.length });
+
+    // Only count blocks that will be enhanced (exclude education)
+    const enhanceableBlocks = blocks.filter(b => b.sectionKey !== 'education');
+    setEnhancementProgress({ current: 0, total: enhanceableBlocks.length });
 
     try {
-      // Enhance each block sequentially
-      for (let i = 0; i < blocks.length; i++) {
-        const block = blocks[i];
-        setEnhancementProgress({ current: i + 1, total: blocks.length });
+      let processed = 0;
+      for (const block of enhanceableBlocks) {
+        processed++;
+        setEnhancementProgress({ current: processed, total: enhanceableBlocks.length });
 
         try {
           const result = await api.enhanceResume(
@@ -234,7 +221,6 @@ export default function InteractiveStudio({
           }
         } catch (error) {
           console.error(`Error enhancing block ${block.id}:`, error);
-          // Continue with next block even if one fails
         }
       }
     } finally {
@@ -243,28 +229,24 @@ export default function InteractiveStudio({
     }
   };
 
-  // Accept individual block
   const handleAccept = (blockId: string) => {
     setBlocks(blocks.map(b =>
       b.id === blockId ? { ...b, status: 'accepted' } : b
     ));
   };
 
-  // Reject individual block
   const handleReject = (blockId: string) => {
     setBlocks(blocks.map(b =>
       b.id === blockId ? { ...b, status: 'rejected' } : b
     ));
   };
 
-  // Accept ALL
   const handleAcceptAll = () => {
     setBlocks(blocks.map(b =>
       b.enhancedText ? { ...b, status: 'accepted' } : b
     ));
   };
 
-  // Reject ALL
   const handleRejectAll = () => {
     setBlocks(blocks.map(b => ({ ...b, status: 'rejected' })));
   };
@@ -304,10 +286,18 @@ export default function InteractiveStudio({
     );
   }
 
-  // Count enhanced blocks
   const enhancedCount = blocks.filter(b => b.enhancedText).length;
   const acceptedCount = blocks.filter(b => b.status === 'accepted').length;
   const rejectedCount = blocks.filter(b => b.status === 'rejected').length;
+
+  // Group blocks by section
+  const groupedBlocks = blocks.reduce((acc, block) => {
+    if (!acc[block.sectionKey]) {
+      acc[block.sectionKey] = [];
+    }
+    acc[block.sectionKey].push(block);
+    return acc;
+  }, {} as Record<string, Block[]>);
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
@@ -369,7 +359,7 @@ export default function InteractiveStudio({
           <div className="flex gap-3">
             <button
               onClick={handleEnhanceAll}
-              disabled={isLoading || enhancedCount === blocks.length}
+              disabled={isLoading || enhancedCount === blocks.filter(b => b.sectionKey !== 'education').length}
               className="px-6 py-3 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 disabled:bg-gray-400 transition-colors shadow-sm"
             >
               {isLoading ? `Enhancing ${enhancementProgress.current}/${enhancementProgress.total}...` : '✨ Enhance All'}
@@ -396,10 +386,7 @@ export default function InteractiveStudio({
           {acceptedCount > 0 && (
             <button
               onClick={() => {
-                const finalBlocks = blocks.filter(b =>
-                  b.status === 'accepted' || b.status === 'rejected' || b.status === 'original'
-                );
-                const finalText = finalBlocks.map(b =>
+                const finalText = blocks.map(b =>
                   b.status === 'accepted' && b.enhancedText ? b.enhancedText : b.text
                 ).join('\n\n');
 
@@ -418,80 +405,98 @@ export default function InteractiveStudio({
         </div>
       </div>
 
-      {/* Main Content: 2 panels (Suggestions + Final Preview) */}
+      {/* Main Content: 2 panels */}
       <div className="flex-1 flex overflow-hidden">
-        {/* LEFT: All Suggestions with Accept/Reject */}
+        {/* LEFT: Grouped Suggestions */}
         <div className="w-1/2 bg-white border-r border-gray-200 overflow-y-auto p-6">
           <h3 className="text-lg font-bold mb-4 text-gray-900">
-            📝 Review All Enhancements ({enhancedCount}/{blocks.length})
+            📝 Review Enhancements ({enhancedCount}/{blocks.filter(b => b.sectionKey !== 'education').length} enhanced)
           </h3>
 
-          {blocks.map((block) => (
-            <div
-              key={block.id}
-              className={`mb-6 p-4 rounded-lg border-2 transition-all ${
-                block.status === 'accepted' 
-                  ? 'border-green-500 bg-green-50' 
-                  : block.status === 'rejected'
-                  ? 'border-gray-300 bg-gray-50'
-                  : block.enhancedText
-                  ? 'border-blue-400 bg-blue-50'
-                  : 'border-gray-200 bg-white'
-              }`}
-            >
-              {/* Section + Job Title */}
-              <div className="mb-2">
-                <span className="text-xs font-bold text-purple-700 uppercase tracking-wide">
-                  {block.sectionTitle}
-                </span>
-                {block.jobTitle && (
-                  <span className="text-xs text-gray-600 ml-2">→ {block.jobTitle}</span>
-                )}
+          {/* Render sections in groups */}
+          {Object.entries(groupedBlocks).map(([sectionKey, sectionBlocks]) => (
+            <div key={sectionKey} className="mb-8">
+              {/* Section Header Box */}
+              <div className="bg-gradient-to-r from-purple-100 to-pink-100 border-2 border-purple-300 rounded-lg p-3 mb-3">
+                <h4 className="text-base font-bold text-purple-900 uppercase tracking-wide">
+                  {sectionBlocks[0].sectionTitle}
+                  {sectionKey === 'education' && (
+                    <span className="ml-2 text-xs font-normal text-purple-700 bg-purple-200 px-2 py-1 rounded">
+                      Display Only (Not Enhanced)
+                    </span>
+                  )}
+                </h4>
+                <p className="text-xs text-purple-700 mt-1">
+                  {sectionBlocks.length} {sectionBlocks.length === 1 ? 'block' : 'blocks'}
+                </p>
               </div>
 
-              {/* Original */}
-              <div className="mb-3">
-                <label className="text-xs font-semibold text-gray-600 uppercase mb-1 block">Original:</label>
-                <p className="text-sm text-gray-800 leading-relaxed">{block.text}</p>
-              </div>
+              {/* Blocks in this section */}
+              {sectionBlocks.map((block) => (
+                <div
+                  key={block.id}
+                  className={`mb-3 p-4 rounded-lg border-2 transition-all ${
+                    block.status === 'accepted' 
+                      ? 'border-green-500 bg-green-50' 
+                      : block.status === 'rejected'
+                      ? 'border-gray-300 bg-gray-50'
+                      : block.enhancedText
+                      ? 'border-blue-400 bg-blue-50'
+                      : 'border-gray-200 bg-white'
+                  }`}
+                >
+                  {/* Job Title (for experience) */}
+                  {block.jobTitle && (
+                    <div className="text-xs text-gray-600 mb-2 font-medium">
+                      → {block.jobTitle}
+                    </div>
+                  )}
 
-              {/* Enhanced (if available) */}
-              {block.enhancedText && (
-                <div className="mb-3">
-                  <label className="text-xs font-semibold text-green-700 uppercase mb-1 block">Enhanced:</label>
-                  <p className="text-sm text-gray-800 leading-relaxed bg-green-100 p-2 rounded">{block.enhancedText}</p>
-                </div>
-              )}
+                  {/* Original */}
+                  <div className="mb-3">
+                    <label className="text-xs font-semibold text-gray-600 uppercase mb-1 block">Original:</label>
+                    <p className="text-sm text-gray-800 leading-relaxed">{block.text}</p>
+                  </div>
 
-              {/* Actions */}
-              {block.enhancedText && block.status !== 'accepted' && block.status !== 'rejected' && (
-                <div className="flex gap-2 mt-3">
-                  <button
-                    onClick={() => handleAccept(block.id)}
-                    className="flex-1 py-2 bg-green-600 text-white rounded font-semibold hover:bg-green-700 text-sm"
-                  >
-                    ✓ Accept
-                  </button>
-                  <button
-                    onClick={() => handleReject(block.id)}
-                    className="flex-1 py-2 bg-gray-400 text-white rounded font-semibold hover:bg-gray-500 text-sm"
-                  >
-                    ✗ Reject
-                  </button>
-                </div>
-              )}
+                  {/* Enhanced (if available) */}
+                  {block.enhancedText && (
+                    <div className="mb-3">
+                      <label className="text-xs font-semibold text-green-700 uppercase mb-1 block">Enhanced:</label>
+                      <p className="text-sm text-gray-800 leading-relaxed bg-green-100 p-2 rounded">{block.enhancedText}</p>
+                    </div>
+                  )}
 
-              {/* Status Badge */}
-              {block.status === 'accepted' && (
-                <div className="mt-3 text-center text-sm font-semibold text-green-700 bg-green-200 py-2 rounded">
-                  ✓ Accepted
+                  {/* Actions - Only for non-education sections */}
+                  {sectionKey !== 'education' && block.enhancedText && block.status !== 'accepted' && block.status !== 'rejected' && (
+                    <div className="flex gap-2 mt-3">
+                      <button
+                        onClick={() => handleAccept(block.id)}
+                        className="flex-1 py-2 bg-green-600 text-white rounded font-semibold hover:bg-green-700 text-sm"
+                      >
+                        ✓ Accept
+                      </button>
+                      <button
+                        onClick={() => handleReject(block.id)}
+                        className="flex-1 py-2 bg-gray-400 text-white rounded font-semibold hover:bg-gray-500 text-sm"
+                      >
+                        ✗ Reject
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Status Badge */}
+                  {block.status === 'accepted' && (
+                    <div className="mt-3 text-center text-sm font-semibold text-green-700 bg-green-200 py-2 rounded">
+                      ✓ Accepted
+                    </div>
+                  )}
+                  {block.status === 'rejected' && (
+                    <div className="mt-3 text-center text-sm font-semibold text-gray-700 bg-gray-200 py-2 rounded">
+                      ✗ Rejected (Using Original)
+                    </div>
+                  )}
                 </div>
-              )}
-              {block.status === 'rejected' && (
-                <div className="mt-3 text-center text-sm font-semibold text-gray-700 bg-gray-200 py-2 rounded">
-                  ✗ Rejected (Using Original)
-                </div>
-              )}
+              ))}
             </div>
           ))}
         </div>
@@ -518,8 +523,8 @@ export default function InteractiveStudio({
 
             {/* Render each section */}
             {['summary', 'skills', 'experience', 'education', 'projects', 'certifications', 'awards'].map(sectionKey => {
-              const sectionBlocks = blocks.filter(b => b.sectionKey === sectionKey);
-              if (sectionBlocks.length === 0) return null;
+              const sectionBlocks = groupedBlocks[sectionKey];
+              if (!sectionBlocks || sectionBlocks.length === 0) return null;
 
               return (
                 <div key={sectionKey} className="mb-6">
