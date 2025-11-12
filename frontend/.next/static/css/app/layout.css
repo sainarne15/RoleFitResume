@@ -813,6 +813,9 @@ video {
 .w-12 {
   width: 3rem;
 }
+.w-1\/2 {
+  width: 50%;
+}
 .max-w-\[1800px\] {
   max-width: 1800px;
 }

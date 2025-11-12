@@ -218,6 +218,104 @@ export default function QuickEnhance({
             ))}
           </div>
         )}
+
+        {/* Projects */}
+        {sections.projects?.blocks && sections.projects.blocks.length > 0 && (
+          <div>
+            <h3 className="text-base font-bold text-gray-900 mb-2 uppercase tracking-wide border-b border-gray-300 pb-1">
+              PROJECTS
+            </h3>
+            {sections.projects.blocks.map((block: any, idx: number) => (
+              <p key={idx} className="text-sm text-gray-800 mb-1">
+                {block.text}
+              </p>
+            ))}
+          </div>
+        )}
+
+        {/* Certifications */}
+        {sections.certifications?.blocks && sections.certifications.blocks.length > 0 && (
+          <div>
+            <h3 className="text-base font-bold text-gray-900 mb-2 uppercase tracking-wide border-b border-gray-300 pb-1">
+              CERTIFICATIONS
+            </h3>
+            {sections.certifications.blocks.map((block: any, idx: number) => (
+              <p key={idx} className="text-sm text-gray-800 mb-1">
+                {block.text}
+              </p>
+            ))}
+          </div>
+        )}
+
+        {/* Awards */}
+        {sections.awards?.blocks && sections.awards.blocks.length > 0 && (
+          <div>
+            <h3 className="text-base font-bold text-gray-900 mb-2 uppercase tracking-wide border-b border-gray-300 pb-1">
+              AWARDS
+            </h3>
+            {sections.awards.blocks.map((block: any, idx: number) => (
+              <p key={idx} className="text-sm text-gray-800 mb-1">
+                {block.text}
+              </p>
+            ))}
+          </div>
+        )}
+
+        {/* Publications */}
+        {sections.publications?.blocks && sections.publications.blocks.length > 0 && (
+          <div>
+            <h3 className="text-base font-bold text-gray-900 mb-2 uppercase tracking-wide border-b border-gray-300 pb-1">
+              PUBLICATIONS
+            </h3>
+            {sections.publications.blocks.map((block: any, idx: number) => (
+              <p key={idx} className="text-sm text-gray-800 mb-1">
+                {block.text}
+              </p>
+            ))}
+          </div>
+        )}
+
+        {/* Volunteer */}
+        {sections.volunteer?.blocks && sections.volunteer.blocks.length > 0 && (
+          <div>
+            <h3 className="text-base font-bold text-gray-900 mb-2 uppercase tracking-wide border-b border-gray-300 pb-1">
+              VOLUNTEER
+            </h3>
+            {sections.volunteer.blocks.map((block: any, idx: number) => (
+              <p key={idx} className="text-sm text-gray-800 mb-1">
+                {block.text}
+              </p>
+            ))}
+          </div>
+        )}
+
+        {/* Languages */}
+        {sections.languages?.blocks && sections.languages.blocks.length > 0 && (
+          <div>
+            <h3 className="text-base font-bold text-gray-900 mb-2 uppercase tracking-wide border-b border-gray-300 pb-1">
+              LANGUAGES
+            </h3>
+            {sections.languages.blocks.map((block: any, idx: number) => (
+              <p key={idx} className="text-sm text-gray-800 mb-1">
+                {block.text}
+              </p>
+            ))}
+          </div>
+        )}
+
+        {/* Interests */}
+        {sections.interests?.blocks && sections.interests.blocks.length > 0 && (
+          <div>
+            <h3 className="text-base font-bold text-gray-900 mb-2 uppercase tracking-wide border-b border-gray-300 pb-1">
+              INTERESTS
+            </h3>
+            {sections.interests.blocks.map((block: any, idx: number) => (
+              <p key={idx} className="text-sm text-gray-800 mb-1">
+                {block.text}
+              </p>
+            ))}
+          </div>
+        )}
       </div>
     );
   };

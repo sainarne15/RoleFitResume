@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Resume, ATSScore } from '@/types';
+import { useState } from 'react';
+import { Resume } from '@/types';
 import { api } from '@/lib/api';
 import FileUpload from '../QuickEnhance/FileUpload';
 
@@ -16,11 +16,13 @@ interface InteractiveStudioProps {
 interface Block {
   id: string;
   sectionKey: string;
+  sectionTitle: string;
   jobIndex?: number;
+  jobTitle?: string;
   text: string;
   enhancedText: string;
-  status: 'original' | 'enhanced' | 'accepted';
-  type: 'summary' | 'skill' | 'bullet';
+  status: 'original' | 'enhanced' | 'accepted' | 'rejected';
+  type: 'summary' | 'skill' | 'bullet' | 'text';
 }
 
 export default function InteractiveStudio({
@@ -33,12 +35,11 @@ export default function InteractiveStudio({
   const [originalResume, setOriginalResume] = useState<Resume | null>(sharedData?.resume || null);
   const [jobDescription, setJobDescription] = useState<string>(sharedData?.jobDescription || '');
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedBlock, setSelectedBlock] = useState<Block | null>(null);
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [isEditingJD, setIsEditingJD] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState<string>('');
+  const [enhancementProgress, setEnhancementProgress] = useState({ current: 0, total: 0 });
 
-  // Handle file upload
   const handleFileUpload = async (file: File) => {
     setIsLoading(true);
     setUploadedFileName(file.name);
@@ -54,7 +55,6 @@ export default function InteractiveStudio({
           line_count: result.line_count
         });
 
-        // Convert to blocks
         convertToBlocks(result.sections);
       }
     } catch (error) {
@@ -69,13 +69,32 @@ export default function InteractiveStudio({
     const newBlocks: Block[] = [];
     let blockId = 0;
 
-    // Summary section - entire summary as ONE block
+    // Helper to get section display title
+    const getSectionTitle = (key: string) => {
+      const titles: Record<string, string> = {
+        'summary': 'SUMMARY',
+        'skills': 'SKILLS',
+        'experience': 'EXPERIENCE',
+        'education': 'EDUCATION',
+        'projects': 'PROJECTS',
+        'certifications': 'CERTIFICATIONS',
+        'awards': 'AWARDS',
+        'publications': 'PUBLICATIONS',
+        'volunteer': 'VOLUNTEER',
+        'languages': 'LANGUAGES',
+        'interests': 'INTERESTS'
+      };
+      return titles[key] || key.toUpperCase();
+    };
+
+    // Summary
     if (sections.summary?.blocks && sections.summary.blocks.length > 0) {
       const summaryText = sections.summary.blocks.map((b: any) => b.text).join(' ');
       if (summaryText.trim()) {
         newBlocks.push({
           id: `block-${blockId++}`,
           sectionKey: 'summary',
+          sectionTitle: getSectionTitle('summary'),
           text: summaryText,
           enhancedText: '',
           status: 'original',
@@ -84,12 +103,13 @@ export default function InteractiveStudio({
       }
     }
 
-    // Skills section - each line is a block
+    // Skills - each line is a block
     if (sections.skills?.blocks) {
       sections.skills.blocks.forEach((skillBlock: any) => {
         newBlocks.push({
           id: `block-${blockId++}`,
           sectionKey: 'skills',
+          sectionTitle: getSectionTitle('skills'),
           text: skillBlock.text,
           enhancedText: '',
           status: 'original',
@@ -98,14 +118,16 @@ export default function InteractiveStudio({
       });
     }
 
-    // Experience section - each bullet is a block
+    // Experience - each bullet is a block
     if (sections.experience?.jobs) {
       sections.experience.jobs.forEach((job: any, jobIdx: number) => {
         job.bullets.forEach((bullet: string) => {
           newBlocks.push({
             id: `block-${blockId++}`,
             sectionKey: 'experience',
+            sectionTitle: getSectionTitle('experience'),
             jobIndex: jobIdx,
+            jobTitle: job.title,
             text: bullet,
             enhancedText: '',
             status: 'original',
@@ -115,69 +137,142 @@ export default function InteractiveStudio({
       });
     }
 
+    // Education
+    if (sections.education?.blocks) {
+      sections.education.blocks.forEach((block: any) => {
+        newBlocks.push({
+          id: `block-${blockId++}`,
+          sectionKey: 'education',
+          sectionTitle: getSectionTitle('education'),
+          text: block.text,
+          enhancedText: '',
+          status: 'original',
+          type: 'text'
+        });
+      });
+    }
+
+    // Projects
+    if (sections.projects?.blocks) {
+      sections.projects.blocks.forEach((block: any) => {
+        newBlocks.push({
+          id: `block-${blockId++}`,
+          sectionKey: 'projects',
+          sectionTitle: getSectionTitle('projects'),
+          text: block.text,
+          enhancedText: '',
+          status: 'original',
+          type: 'text'
+        });
+      });
+    }
+
+    // Certifications
+    if (sections.certifications?.blocks) {
+      sections.certifications.blocks.forEach((block: any) => {
+        newBlocks.push({
+          id: `block-${blockId++}`,
+          sectionKey: 'certifications',
+          sectionTitle: getSectionTitle('certifications'),
+          text: block.text,
+          enhancedText: '',
+          status: 'original',
+          type: 'text'
+        });
+      });
+    }
+
+    // Awards
+    if (sections.awards?.blocks) {
+      sections.awards.blocks.forEach((block: any) => {
+        newBlocks.push({
+          id: `block-${blockId++}`,
+          sectionKey: 'awards',
+          sectionTitle: getSectionTitle('awards'),
+          text: block.text,
+          enhancedText: '',
+          status: 'original',
+          type: 'text'
+        });
+      });
+    }
+
     setBlocks(newBlocks);
   };
 
-  // Enhance a block
-  const handleEnhanceBlock = async (block: Block) => {
+  // BATCH ENHANCE ALL - New workflow!
+  const handleEnhanceAll = async () => {
     if (!jobDescription || !apiKey) {
       alert('Please provide job description and API key');
       return;
     }
 
-    setSelectedBlock(block);
     setIsLoading(true);
+    setEnhancementProgress({ current: 0, total: blocks.length });
 
     try {
-      const result = await api.enhanceResume(
-        block.text,
-        jobDescription,
-        provider,
-        model,
-        apiKey
-      );
+      // Enhance each block sequentially
+      for (let i = 0; i < blocks.length; i++) {
+        const block = blocks[i];
+        setEnhancementProgress({ current: i + 1, total: blocks.length });
 
-      if (result.success) {
-        setBlocks(blocks.map(b =>
-          b.id === block.id
-            ? { ...b, enhancedText: result.enhanced_resume, status: 'enhanced' }
-            : b
-        ));
+        try {
+          const result = await api.enhanceResume(
+            block.text,
+            jobDescription,
+            provider,
+            model,
+            apiKey
+          );
 
-        setSelectedBlock({
-          ...block,
-          enhancedText: result.enhanced_resume,
-          status: 'enhanced'
-        });
+          if (result.success) {
+            setBlocks(prev => prev.map(b =>
+              b.id === block.id
+                ? { ...b, enhancedText: result.enhanced_resume, status: 'enhanced' }
+                : b
+            ));
+          }
+        } catch (error) {
+          console.error(`Error enhancing block ${block.id}:`, error);
+          // Continue with next block even if one fails
+        }
       }
-    } catch (error) {
-      console.error('Error enhancing block:', error);
     } finally {
       setIsLoading(false);
+      setEnhancementProgress({ current: 0, total: 0 });
     }
   };
 
-  // Accept enhancement
+  // Accept individual block
   const handleAccept = (blockId: string) => {
     setBlocks(blocks.map(b =>
       b.id === blockId ? { ...b, status: 'accepted' } : b
     ));
-    setSelectedBlock(null);
   };
 
-  // Reject enhancement
+  // Reject individual block
   const handleReject = (blockId: string) => {
     setBlocks(blocks.map(b =>
-      b.id === blockId ? { ...b, enhancedText: '', status: 'original' } : b
+      b.id === blockId ? { ...b, status: 'rejected' } : b
     ));
-    setSelectedBlock(null);
   };
 
-  // Show upload UI if no resume - MATCHING QuickEnhance style
+  // Accept ALL
+  const handleAcceptAll = () => {
+    setBlocks(blocks.map(b =>
+      b.enhancedText ? { ...b, status: 'accepted' } : b
+    ));
+  };
+
+  // Reject ALL
+  const handleRejectAll = () => {
+    setBlocks(blocks.map(b => ({ ...b, status: 'rejected' })));
+  };
+
+  // Show upload UI
   if (!originalResume) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-        {/* Header - MATCHING QuickEnhance */}
         <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
           <div className="max-w-[1800px] mx-auto px-8 py-5">
             <div className="flex items-center justify-between">
@@ -185,7 +280,7 @@ export default function InteractiveStudio({
                 <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
                   ✏️ Interactive Studio
                 </h1>
-                <p className="text-sm text-gray-500 mt-1">Point-by-point resume enhancement with live preview</p>
+                <p className="text-sm text-gray-500 mt-1">Batch enhance • Review • Accept/Reject</p>
               </div>
               <div className="text-sm text-gray-500">
                 Using: <span className="font-semibold text-purple-600">{provider}</span> • {model.split('-')[0]}
@@ -195,7 +290,6 @@ export default function InteractiveStudio({
         </header>
 
         <div className="max-w-[1800px] mx-auto px-8 py-8">
-          {/* Upload UI - EXACT same as QuickEnhance */}
           <div className="mb-8 bg-white rounded-xl shadow-lg p-6 border border-gray-200">
             <FileUpload
               onFileUpload={handleFileUpload}
@@ -210,10 +304,14 @@ export default function InteractiveStudio({
     );
   }
 
-  // Main 3-panel layout
+  // Count enhanced blocks
+  const enhancedCount = blocks.filter(b => b.enhancedText).length;
+  const acceptedCount = blocks.filter(b => b.status === 'accepted').length;
+  const rejectedCount = blocks.filter(b => b.status === 'rejected').length;
+
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      {/* Top Bar - MATCHING QuickEnhance header style */}
+      {/* Header */}
       <header className="bg-white border-b border-gray-200 shadow-sm">
         <div className="px-8 py-5">
           <div className="flex items-center justify-between">
@@ -221,7 +319,9 @@ export default function InteractiveStudio({
               <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
                 ✏️ Interactive Studio
               </h1>
-              <p className="text-sm text-gray-500 mt-1">Select blocks to enhance • Live preview</p>
+              <p className="text-sm text-gray-500 mt-1">
+                {enhancedCount > 0 ? `${acceptedCount} accepted • ${rejectedCount} rejected • ${enhancedCount - acceptedCount - rejectedCount} pending` : 'Click "Enhance All" to start'}
+              </p>
             </div>
             <div className="flex items-center gap-4">
               <div className="text-sm text-gray-500">
@@ -237,7 +337,6 @@ export default function InteractiveStudio({
                 onClick={() => {
                   setOriginalResume(null);
                   setBlocks([]);
-                  setSelectedBlock(null);
                   setUploadedFileName('');
                 }}
                 className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 text-sm font-medium transition-colors shadow-sm"
@@ -249,7 +348,7 @@ export default function InteractiveStudio({
         </div>
       </header>
 
-      {/* JD Edit Area (when editing) */}
+      {/* JD Edit Area */}
       {isEditingJD && (
         <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border-b border-blue-200 px-8 py-6">
           <label className="block text-sm font-semibold text-gray-700 mb-3">
@@ -264,184 +363,145 @@ export default function InteractiveStudio({
         </div>
       )}
 
-      {/* Main Content: 3 panels */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* LEFT PANEL: Source Resume Structure */}
-        <div className="w-1/3 bg-white border-r border-gray-200 overflow-y-auto p-6">
-          <h3 className="text-lg font-bold mb-4 text-gray-900">📋 Your Resume</h3>
+      {/* Action Bar */}
+      <div className="bg-white border-b border-gray-200 px-8 py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex gap-3">
+            <button
+              onClick={handleEnhanceAll}
+              disabled={isLoading || enhancedCount === blocks.length}
+              className="px-6 py-3 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 disabled:bg-gray-400 transition-colors shadow-sm"
+            >
+              {isLoading ? `Enhancing ${enhancementProgress.current}/${enhancementProgress.total}...` : '✨ Enhance All'}
+            </button>
 
-          {/* Summary Section */}
-          {blocks.filter(b => b.sectionKey === 'summary').length > 0 && (
-            <div className="mb-6">
-              <h4 className="text-sm font-bold text-purple-700 mb-2 uppercase tracking-wide">📝 Summary</h4>
-              {blocks.filter(b => b.sectionKey === 'summary').map(block => (
-                <div
-                  key={block.id}
-                  onClick={() => setSelectedBlock(block)}
-                  className={`p-4 mb-2 rounded-lg border-2 cursor-pointer transition-all ${
-                    selectedBlock?.id === block.id 
-                      ? 'border-purple-500 bg-purple-50 shadow-md' 
-                      : block.status === 'accepted'
-                      ? 'border-green-500 bg-green-50'
-                      : 'border-gray-200 hover:border-purple-300 hover:shadow-sm'
-                  }`}
+            {enhancedCount > 0 && (
+              <>
+                <button
+                  onClick={handleAcceptAll}
+                  className="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors shadow-sm"
                 >
-                  <p className="text-sm text-gray-800 leading-relaxed line-clamp-3">
-                    {block.status === 'accepted' && block.enhancedText ? block.enhancedText : block.text}
-                  </p>
-                  {block.status === 'accepted' && (
-                    <span className="inline-block mt-2 text-xs font-semibold text-green-600 bg-green-100 px-2 py-1 rounded">
-                      ✓ Accepted
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Skills Section */}
-          {blocks.filter(b => b.sectionKey === 'skills').length > 0 && (
-            <div className="mb-6">
-              <h4 className="text-sm font-bold text-blue-700 mb-2 uppercase tracking-wide">🛠️ Skills</h4>
-              {blocks.filter(b => b.sectionKey === 'skills').map(block => (
-                <div
-                  key={block.id}
-                  onClick={() => setSelectedBlock(block)}
-                  className={`p-3 mb-2 rounded-lg border-2 cursor-pointer transition-all ${
-                    selectedBlock?.id === block.id 
-                      ? 'border-purple-500 bg-purple-50 shadow-md' 
-                      : block.status === 'accepted'
-                      ? 'border-green-500 bg-green-50'
-                      : 'border-gray-200 hover:border-purple-300 hover:shadow-sm'
-                  }`}
+                  ✓ Accept All
+                </button>
+                <button
+                  onClick={handleRejectAll}
+                  className="px-6 py-3 bg-gray-400 text-white rounded-lg font-semibold hover:bg-gray-500 transition-colors shadow-sm"
                 >
-                  <p className="text-sm text-gray-800">
-                    {block.status === 'accepted' && block.enhancedText ? block.enhancedText : block.text}
-                  </p>
-                  {block.status === 'accepted' && (
-                    <span className="inline-block mt-2 text-xs font-semibold text-green-600 bg-green-100 px-2 py-1 rounded">
-                      ✓ Accepted
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+                  ✗ Reject All
+                </button>
+              </>
+            )}
+          </div>
 
-          {/* Experience Section */}
-          {originalResume.sections.experience?.jobs && (
-            <div className="mb-6">
-              <h4 className="text-sm font-bold text-indigo-700 mb-2 uppercase tracking-wide">💼 Experience</h4>
-              {originalResume.sections.experience.jobs.map((job: any, jobIdx: number) => (
-                <div key={jobIdx} className="mb-4 pl-3 border-l-4 border-indigo-200">
-                  <h5 className="text-sm font-bold text-gray-900 mb-2">{job.title}</h5>
-                  {blocks.filter(b => b.sectionKey === 'experience' && b.jobIndex === jobIdx).map(block => (
-                    <div
-                      key={block.id}
-                      onClick={() => setSelectedBlock(block)}
-                      className={`p-3 mb-2 rounded-lg border-2 cursor-pointer transition-all ${
-                        selectedBlock?.id === block.id 
-                          ? 'border-purple-500 bg-purple-50 shadow-md' 
-                          : block.status === 'accepted'
-                          ? 'border-green-500 bg-green-50'
-                          : 'border-gray-200 hover:border-purple-300 hover:shadow-sm'
-                      }`}
-                    >
-                      <p className="text-sm text-gray-800">
-                        {block.status === 'accepted' && block.enhancedText ? block.enhancedText : block.text}
-                      </p>
-                      {block.status === 'accepted' && (
-                        <span className="inline-block mt-2 text-xs font-semibold text-green-600 bg-green-100 px-2 py-1 rounded">
-                          ✓ Accepted
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
+          {acceptedCount > 0 && (
+            <button
+              onClick={() => {
+                const finalBlocks = blocks.filter(b =>
+                  b.status === 'accepted' || b.status === 'rejected' || b.status === 'original'
+                );
+                const finalText = finalBlocks.map(b =>
+                  b.status === 'accepted' && b.enhancedText ? b.enhancedText : b.text
+                ).join('\n\n');
+
+                const blob = new Blob([finalText], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'enhanced_resume_final.txt';
+                a.click();
+              }}
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              📥 Download Final Resume
+            </button>
           )}
         </div>
+      </div>
 
-        {/* RIGHT PANEL: AI Suggestions */}
-        <div className="w-1/3 bg-gradient-to-br from-purple-50 to-pink-50 border-r border-gray-200 overflow-y-auto p-6">
-          <h3 className="text-lg font-bold mb-4 text-gray-900">✨ AI Enhancement</h3>
+      {/* Main Content: 2 panels (Suggestions + Final Preview) */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* LEFT: All Suggestions with Accept/Reject */}
+        <div className="w-1/2 bg-white border-r border-gray-200 overflow-y-auto p-6">
+          <h3 className="text-lg font-bold mb-4 text-gray-900">
+            📝 Review All Enhancements ({enhancedCount}/{blocks.length})
+          </h3>
 
-          {!selectedBlock ? (
-            <div className="text-center py-20">
-              <div className="text-6xl mb-4">👈</div>
-              <p className="text-gray-500 text-lg font-medium">Select a block from the left</p>
-              <p className="text-gray-400 text-sm mt-2">Click any block to enhance it with AI</p>
-            </div>
-          ) : (
-            <div>
+          {blocks.map((block) => (
+            <div
+              key={block.id}
+              className={`mb-6 p-4 rounded-lg border-2 transition-all ${
+                block.status === 'accepted' 
+                  ? 'border-green-500 bg-green-50' 
+                  : block.status === 'rejected'
+                  ? 'border-gray-300 bg-gray-50'
+                  : block.enhancedText
+                  ? 'border-blue-400 bg-blue-50'
+                  : 'border-gray-200 bg-white'
+              }`}
+            >
+              {/* Section + Job Title */}
+              <div className="mb-2">
+                <span className="text-xs font-bold text-purple-700 uppercase tracking-wide">
+                  {block.sectionTitle}
+                </span>
+                {block.jobTitle && (
+                  <span className="text-xs text-gray-600 ml-2">→ {block.jobTitle}</span>
+                )}
+              </div>
+
               {/* Original */}
-              <div className="mb-6">
-                <label className="text-xs font-bold text-red-700 uppercase tracking-wide mb-2 block">
-                  Original:
-                </label>
-                <div className="p-4 bg-red-50 border-2 border-red-200 rounded-lg">
-                  <p className="text-sm text-gray-800 leading-relaxed">{selectedBlock.text}</p>
-                </div>
+              <div className="mb-3">
+                <label className="text-xs font-semibold text-gray-600 uppercase mb-1 block">Original:</label>
+                <p className="text-sm text-gray-800 leading-relaxed">{block.text}</p>
               </div>
 
               {/* Enhanced (if available) */}
-              {selectedBlock.enhancedText && (
-                <div className="mb-6">
-                  <label className="text-xs font-bold text-green-700 uppercase tracking-wide mb-2 block">
-                    Enhanced:
-                  </label>
-                  <div className="p-4 bg-green-50 border-2 border-green-400 rounded-lg">
-                    <p className="text-sm text-gray-800 leading-relaxed">{selectedBlock.enhancedText}</p>
-                  </div>
+              {block.enhancedText && (
+                <div className="mb-3">
+                  <label className="text-xs font-semibold text-green-700 uppercase mb-1 block">Enhanced:</label>
+                  <p className="text-sm text-gray-800 leading-relaxed bg-green-100 p-2 rounded">{block.enhancedText}</p>
                 </div>
               )}
 
               {/* Actions */}
-              <div className="space-y-3">
-                {selectedBlock.status === 'original' && !selectedBlock.enhancedText && (
+              {block.enhancedText && block.status !== 'accepted' && block.status !== 'rejected' && (
+                <div className="flex gap-2 mt-3">
                   <button
-                    onClick={() => handleEnhanceBlock(selectedBlock)}
-                    disabled={isLoading}
-                    className="w-full py-3 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 disabled:bg-gray-400 transition-colors shadow-sm"
+                    onClick={() => handleAccept(block.id)}
+                    className="flex-1 py-2 bg-green-600 text-white rounded font-semibold hover:bg-green-700 text-sm"
                   >
-                    {isLoading ? 'Enhancing...' : '✨ Enhance with AI'}
+                    ✓ Accept
                   </button>
-                )}
+                  <button
+                    onClick={() => handleReject(block.id)}
+                    className="flex-1 py-2 bg-gray-400 text-white rounded font-semibold hover:bg-gray-500 text-sm"
+                  >
+                    ✗ Reject
+                  </button>
+                </div>
+              )}
 
-                {selectedBlock.enhancedText && selectedBlock.status !== 'accepted' && (
-                  <>
-                    <button
-                      onClick={() => handleAccept(selectedBlock.id)}
-                      className="w-full py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors shadow-sm"
-                    >
-                      ✓ Accept Enhancement
-                    </button>
-                    <button
-                      onClick={() => handleReject(selectedBlock.id)}
-                      className="w-full py-3 bg-gray-400 text-white rounded-lg font-semibold hover:bg-gray-500 transition-colors shadow-sm"
-                    >
-                      ✗ Reject
-                    </button>
-                  </>
-                )}
-
-                {selectedBlock.status === 'accepted' && (
-                  <div className="text-center py-4 text-green-700 font-semibold bg-green-100 rounded-lg">
-                    ✓ This block has been accepted!
-                  </div>
-                )}
-              </div>
+              {/* Status Badge */}
+              {block.status === 'accepted' && (
+                <div className="mt-3 text-center text-sm font-semibold text-green-700 bg-green-200 py-2 rounded">
+                  ✓ Accepted
+                </div>
+              )}
+              {block.status === 'rejected' && (
+                <div className="mt-3 text-center text-sm font-semibold text-gray-700 bg-gray-200 py-2 rounded">
+                  ✗ Rejected (Using Original)
+                </div>
+              )}
             </div>
-          )}
+          ))}
         </div>
 
-        {/* BOTTOM-RIGHT PANEL: Final Resume Preview */}
-        <div className="w-1/3 bg-white overflow-y-auto p-6">
-          <h3 className="text-lg font-bold mb-4 text-gray-900">📄 Final Resume</h3>
+        {/* RIGHT: Final Resume Preview */}
+        <div className="w-1/2 bg-gradient-to-br from-gray-50 to-slate-50 overflow-y-auto p-6">
+          <h3 className="text-lg font-bold mb-4 text-gray-900">📄 Final Resume Preview</h3>
 
-          <div className="bg-gradient-to-br from-gray-50 to-slate-50 p-6 rounded-lg border-2 border-gray-200 min-h-[600px]">
-            {/* Header/Contact Info */}
+          <div className="bg-white p-6 rounded-lg border-2 border-gray-200 min-h-[600px]">
+            {/* Header */}
             {originalResume.sections.header?.lines && originalResume.sections.header.lines.length > 0 && (
               <div className="mb-6 pb-4 border-b-2 border-gray-300">
                 {originalResume.sections.header.lines.map((line, idx) => (
@@ -456,66 +516,48 @@ export default function InteractiveStudio({
               </div>
             )}
 
-            {/* Summary */}
-            {blocks.filter(b => b.sectionKey === 'summary').length > 0 && (
-              <div className="mb-6">
-                <h4 className="text-sm font-bold text-gray-900 mb-2 uppercase tracking-wide">SUMMARY</h4>
-                {blocks.filter(b => b.sectionKey === 'summary').map(block => (
-                  <p key={block.id} className="text-sm text-gray-800 leading-relaxed">
-                    {block.status === 'accepted' && block.enhancedText ? block.enhancedText : block.text}
-                  </p>
-                ))}
-              </div>
-            )}
+            {/* Render each section */}
+            {['summary', 'skills', 'experience', 'education', 'projects', 'certifications', 'awards'].map(sectionKey => {
+              const sectionBlocks = blocks.filter(b => b.sectionKey === sectionKey);
+              if (sectionBlocks.length === 0) return null;
 
-            {/* Skills */}
-            {blocks.filter(b => b.sectionKey === 'skills').length > 0 && (
-              <div className="mb-6">
-                <h4 className="text-sm font-bold text-gray-900 mb-2 uppercase tracking-wide">SKILLS</h4>
-                {blocks.filter(b => b.sectionKey === 'skills').map(block => (
-                  <div key={block.id} className="text-sm text-gray-800 mb-1">
-                    • {block.status === 'accepted' && block.enhancedText ? block.enhancedText : block.text}
-                  </div>
-                ))}
-              </div>
-            )}
+              return (
+                <div key={sectionKey} className="mb-6">
+                  <h3 className="text-base font-bold text-gray-900 mb-2 uppercase tracking-wide border-b border-gray-300 pb-1">
+                    {sectionBlocks[0].sectionTitle}
+                  </h3>
 
-            {/* Experience */}
-            {originalResume.sections.experience?.jobs && (
-              <div className="mb-6">
-                <h4 className="text-sm font-bold text-gray-900 mb-2 uppercase tracking-wide">EXPERIENCE</h4>
-                {originalResume.sections.experience.jobs.map((job: any, jobIdx: number) => (
-                  <div key={jobIdx} className="mb-4">
-                    <h5 className="text-sm font-bold text-gray-900 mb-2">{job.title}</h5>
-                    {blocks.filter(b => b.sectionKey === 'experience' && b.jobIndex === jobIdx).map(block => (
-                      <div key={block.id} className="text-sm text-gray-800 mb-1 pl-4">
-                        • {block.status === 'accepted' && block.enhancedText ? block.enhancedText : block.text}
+                  {sectionKey === 'experience' ? (
+                    // Group by job
+                    (() => {
+                      const jobs = [...new Set(sectionBlocks.map(b => b.jobTitle))];
+                      return jobs.map(jobTitle => (
+                        <div key={jobTitle} className="mb-4">
+                          <h4 className="text-sm font-bold text-gray-900 mb-2">{jobTitle}</h4>
+                          {sectionBlocks
+                            .filter(b => b.jobTitle === jobTitle)
+                            .map(block => (
+                              <div key={block.id} className="text-sm text-gray-800 mb-1 pl-4">
+                                • {block.status === 'accepted' && block.enhancedText ? block.enhancedText : block.text}
+                              </div>
+                            ))
+                          }
+                        </div>
+                      ));
+                    })()
+                  ) : (
+                    // Regular blocks
+                    sectionBlocks.map(block => (
+                      <div key={block.id} className="text-sm text-gray-800 mb-1">
+                        {sectionKey === 'skills' && '• '}
+                        {block.status === 'accepted' && block.enhancedText ? block.enhancedText : block.text}
                       </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            )}
+                    ))
+                  )}
+                </div>
+              );
+            })}
           </div>
-
-          {/* Download Button */}
-          <button
-            onClick={() => {
-              const finalResume = blocks.map(b =>
-                b.status === 'accepted' && b.enhancedText ? b.enhancedText : b.text
-              ).join('\n\n');
-
-              const blob = new Blob([finalResume], { type: 'text/plain' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = 'enhanced_resume_final.txt';
-              a.click();
-            }}
-            className="w-full mt-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors shadow-sm"
-          >
-            📥 Download Final Resume
-          </button>
         </div>
       </div>
     </div>
