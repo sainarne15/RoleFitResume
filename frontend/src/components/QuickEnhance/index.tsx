@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { Resume, ATSScore, VersionHistory } from '@/types';
 import FileUpload from './FileUpload';
@@ -11,6 +11,8 @@ interface QuickEnhanceProps {
   model: string;
   apiKey: string;
   globalApiKeys: Record<string, string>;
+  sharedResume?: any;
+  sharedJobDescription?: string;
 }
 
 export default function QuickEnhance({
@@ -18,11 +20,13 @@ export default function QuickEnhance({
   provider,
   model,
   apiKey,
-  globalApiKeys
+  globalApiKeys,
+  sharedResume,
+  sharedJobDescription
 }: QuickEnhanceProps) {
-  const [originalResume, setOriginalResume] = useState<Resume | null>(null);
+  const [originalResume, setOriginalResume] = useState<Resume | null>(sharedResume || null);
   const [enhancedResume, setEnhancedResume] = useState<string>('');
-  const [jobDescription, setJobDescription] = useState<string>('');
+  const [jobDescription, setJobDescription] = useState<string>(sharedJobDescription || '');
   const [originalScore, setOriginalScore] = useState<ATSScore | null>(null);
   const [enhancedScore, setEnhancedScore] = useState<ATSScore | null>(null);
   const [history, setHistory] = useState<VersionHistory[]>([]);
@@ -30,6 +34,15 @@ export default function QuickEnhance({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [uploadedFileName, setUploadedFileName] = useState<string>('');
+
+  // Sync with shared state
+  useEffect(() => {
+    if (sharedResume) setOriginalResume(sharedResume);
+  }, [sharedResume]);
+
+  useEffect(() => {
+    if (sharedJobDescription) setJobDescription(sharedJobDescription);
+  }, [sharedJobDescription]);
 
   // Handle file upload
   const handleFileUpload = async (file: File) => {
@@ -41,12 +54,16 @@ export default function QuickEnhance({
       const result = await api.extractDocument(file);
 
       if (result.success) {
-        setOriginalResume({
+        const resume = {
           text: result.text,
           sections: result.sections,
           word_count: result.word_count,
           line_count: result.line_count
-        });
+        };
+        setOriginalResume(resume);
+
+        // Share with parent
+        onDataChange({ resume, jobDescription });
 
         if (jobDescription) {
           const score = await api.calculateScore(result.text, jobDescription);
@@ -66,6 +83,9 @@ export default function QuickEnhance({
 
   const handleJobDescriptionChange = async (jd: string) => {
     setJobDescription(jd);
+
+    // Share with parent
+    onDataChange({ resume: originalResume, jobDescription: jd });
 
     if (originalResume && jd) {
       try {

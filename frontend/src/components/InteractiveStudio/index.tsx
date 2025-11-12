@@ -11,6 +11,7 @@ interface InteractiveStudioProps {
   model: string;
   apiKey: string;
   globalApiKeys: Record<string, string>;
+  onDataChange: (data: any) => void;
 }
 
 interface Block {
@@ -30,7 +31,8 @@ export default function InteractiveStudio({
   provider,
   model,
   apiKey,
-  globalApiKeys
+  globalApiKeys,
+  onDataChange
 }: InteractiveStudioProps) {
   const [originalResume, setOriginalResume] = useState<Resume | null>(sharedData?.resume || null);
   const [jobDescription, setJobDescription] = useState<string>(sharedData?.jobDescription || '');
@@ -38,7 +40,6 @@ export default function InteractiveStudio({
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [isEditingJD, setIsEditingJD] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState<string>('');
-  const [enhancementProgress, setEnhancementProgress] = useState({ current: 0, total: 0 });
 
   const handleFileUpload = async (file: File) => {
     setIsLoading(true);
@@ -48,13 +49,14 @@ export default function InteractiveStudio({
       const result = await api.extractDocument(file);
 
       if (result.success) {
-        setOriginalResume({
+        const resume = {
           text: result.text,
           sections: result.sections,
           word_count: result.word_count,
           line_count: result.line_count
-        });
-
+        };
+        setOriginalResume(resume);
+        onDataChange({ resume, jobDescription });
         convertToBlocks(result.sections);
       }
     } catch (error) {
@@ -184,7 +186,7 @@ export default function InteractiveStudio({
     setBlocks(newBlocks);
   };
 
-  // BATCH ENHANCE ALL - Skip education!
+  // SINGLE API CALL - Enhance all blocks at once!
   const handleEnhanceAll = async () => {
     if (!jobDescription || !apiKey) {
       alert('Please provide job description and API key');
@@ -193,40 +195,180 @@ export default function InteractiveStudio({
 
     setIsLoading(true);
 
-    // Only count blocks that will be enhanced (exclude education)
-    const enhanceableBlocks = blocks.filter(b => b.sectionKey !== 'education');
-    setEnhancementProgress({ current: 0, total: enhanceableBlocks.length });
-
     try {
-      let processed = 0;
-      for (const block of enhanceableBlocks) {
-        processed++;
-        setEnhancementProgress({ current: processed, total: enhanceableBlocks.length });
+      // Only enhance non-education blocks
+      const enhanceableBlocks = blocks.filter(b => b.sectionKey !== 'education');
 
-        try {
-          const result = await api.enhanceResume(
-            block.text,
-            jobDescription,
-            provider,
-            model,
-            apiKey
-          );
+      // Build prompt with all blocks numbered
+      const blocksText = enhanceableBlocks.map((block, idx) =>
+        `[BLOCK ${idx + 1}]\n${block.text}`
+      ).join('\n\n');
 
-          if (result.success) {
-            setBlocks(prev => prev.map(b =>
-              b.id === block.id
-                ? { ...b, enhancedText: result.enhanced_resume, status: 'enhanced' }
-                : b
-            ));
+      const fullPrompt = `You are a professional resume writer. I will give you ${enhanceableBlocks.length} resume blocks numbered [BLOCK 1], [BLOCK 2], etc.
+
+For each block, enhance it to be more impactful and ATS-friendly based on this job description:
+
+${jobDescription}
+
+IMPORTANT RULES:
+1. Keep enhancements concise (±10 words from original)
+2. Use strong action verbs
+3. Add quantifiable results where possible
+4. Match keywords from job description
+5. Maintain professional tone
+6. Keep the same structure (bullet points stay as bullets)
+
+Original blocks:
+${blocksText}
+
+Respond with ONLY the enhanced blocks in this EXACT format:
+
+[BLOCK 1]
+<enhanced version of block 1>
+
+[BLOCK 2]
+<enhanced version of block 2>
+
+...and so on for all ${enhanceableBlocks.length} blocks.
+
+DO NOT add any other text. Just the blocks with their numbers.`;
+
+      // Single API call for all blocks
+      const result = await api.enhanceResume(
+        fullPrompt,
+        '', // Job description already in prompt
+        provider,
+        model,
+        apiKey
+      );
+
+      if (result.success) {
+        // Parse response to extract individual blocks
+        const enhancedBlocks = parseEnhancedBlocks(result.enhanced_resume, enhanceableBlocks.length);
+
+        // Update blocks with enhancements
+        let enhancedIdx = 0;
+        const updatedBlocks = blocks.map(block => {
+          if (block.sectionKey === 'education') {
+            return block; // Skip education
           }
-        } catch (error) {
-          console.error(`Error enhancing block ${block.id}:`, error);
-        }
+
+          const enhanced = enhancedBlocks[enhancedIdx];
+          enhancedIdx++;
+
+          return {
+            ...block,
+            enhancedText: enhanced || block.text,
+            status: 'enhanced' as const
+          };
+        });
+
+        setBlocks(updatedBlocks);
       }
+    } catch (error) {
+      console.error('Error enhancing blocks:', error);
+      alert('Error enhancing resume. Please try again.');
     } finally {
       setIsLoading(false);
-      setEnhancementProgress({ current: 0, total: 0 });
     }
+  };
+
+  // Re-enhance selected blocks (those rejected or pending)
+  const handleReEnhance = async () => {
+    if (!jobDescription || !apiKey) {
+      alert('Please provide job description and API key');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      // Only re-enhance rejected or pending blocks
+      const blocksToEnhance = blocks.filter(b =>
+        b.sectionKey !== 'education' &&
+        (b.status === 'rejected' || (b.status === 'enhanced' && !b.enhancedText))
+      );
+
+      if (blocksToEnhance.length === 0) {
+        alert('No blocks to re-enhance. All blocks are already accepted or enhanced.');
+        setIsLoading(false);
+        return;
+      }
+
+      // Build prompt with selected blocks
+      const blocksText = blocksToEnhance.map((block, idx) =>
+        `[BLOCK ${idx + 1}]\n${block.text}`
+      ).join('\n\n');
+
+      const fullPrompt = `You are a professional resume writer. I will give you ${blocksToEnhance.length} resume blocks.
+
+Enhance each block based on this job description:
+${jobDescription}
+
+RULES: Keep concise (±10 words), use action verbs, add metrics, match job keywords.
+
+Blocks:
+${blocksText}
+
+Respond with enhanced blocks in format:
+[BLOCK 1]
+<enhanced text>
+
+[BLOCK 2]
+<enhanced text>`;
+
+      const result = await api.enhanceResume(fullPrompt, '', provider, model, apiKey);
+
+      if (result.success) {
+        const enhancedBlocks = parseEnhancedBlocks(result.enhanced_resume, blocksToEnhance.length);
+
+        // Update only the re-enhanced blocks
+        let enhancedIdx = 0;
+        const updatedBlocks = blocks.map(block => {
+          const shouldUpdate = blocksToEnhance.find(b => b.id === block.id);
+          if (shouldUpdate) {
+            const enhanced = enhancedBlocks[enhancedIdx];
+            enhancedIdx++;
+            return {
+              ...block,
+              enhancedText: enhanced || block.text,
+              status: 'enhanced' as const
+            };
+          }
+          return block;
+        });
+
+        setBlocks(updatedBlocks);
+      }
+    } catch (error) {
+      console.error('Error re-enhancing blocks:', error);
+      alert('Error re-enhancing. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const parseEnhancedBlocks = (response: string, expectedCount: number): string[] => {
+    const blocks: string[] = [];
+
+    // Split by [BLOCK N] markers
+    const blockPattern = /\[BLOCK \d+\]\s*\n([\s\S]*?)(?=\[BLOCK \d+\]|$)/g;
+    let match;
+
+    while ((match = blockPattern.exec(response)) !== null) {
+      const blockText = match[1].trim();
+      if (blockText) {
+        blocks.push(blockText);
+      }
+    }
+
+    // If parsing failed, try splitting by double newlines
+    if (blocks.length === 0) {
+      const fallbackBlocks = response.split(/\n\n+/).filter(b => b.trim() && !b.startsWith('[BLOCK'));
+      return fallbackBlocks.slice(0, expectedCount);
+    }
+
+    return blocks;
   };
 
   const handleAccept = (blockId: string) => {
@@ -239,6 +381,18 @@ export default function InteractiveStudio({
     setBlocks(blocks.map(b =>
       b.id === blockId ? { ...b, status: 'rejected' } : b
     ));
+  };
+
+  const handleEdit = (blockId: string) => {
+    const block = blocks.find(b => b.id === blockId);
+    if (!block) return;
+
+    const newText = prompt('Edit the enhanced text:', block.enhancedText);
+    if (newText && newText.trim()) {
+      setBlocks(blocks.map(b =>
+        b.id === blockId ? { ...b, enhancedText: newText.trim() } : b
+      ));
+    }
   };
 
   const handleAcceptAll = () => {
@@ -262,7 +416,7 @@ export default function InteractiveStudio({
                 <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
                   ✏️ Interactive Studio
                 </h1>
-                <p className="text-sm text-gray-500 mt-1">Batch enhance • Review • Accept/Reject</p>
+                <p className="text-sm text-gray-500 mt-1">Single API call • Fast & efficient</p>
               </div>
               <div className="text-sm text-gray-500">
                 Using: <span className="font-semibold text-purple-600">{provider}</span> • {model.split('-')[0]}
@@ -289,6 +443,7 @@ export default function InteractiveStudio({
   const enhancedCount = blocks.filter(b => b.enhancedText).length;
   const acceptedCount = blocks.filter(b => b.status === 'accepted').length;
   const rejectedCount = blocks.filter(b => b.status === 'rejected').length;
+  const pendingCount = blocks.filter(b => b.sectionKey !== 'education' && b.status !== 'accepted' && b.status !== 'rejected').length;
 
   // Group blocks by section
   const groupedBlocks = blocks.reduce((acc, block) => {
@@ -310,7 +465,9 @@ export default function InteractiveStudio({
                 ✏️ Interactive Studio
               </h1>
               <p className="text-sm text-gray-500 mt-1">
-                {enhancedCount > 0 ? `${acceptedCount} accepted • ${rejectedCount} rejected • ${enhancedCount - acceptedCount - rejectedCount} pending` : 'Click "Enhance All" to start'}
+                {enhancedCount > 0
+                  ? `${acceptedCount} accepted • ${rejectedCount} rejected • ${pendingCount} pending`
+                  : 'Click "Enhance All" for single API call (fast & cheap!)'}
               </p>
             </div>
             <div className="flex items-center gap-4">
@@ -362,11 +519,18 @@ export default function InteractiveStudio({
               disabled={isLoading || enhancedCount === blocks.filter(b => b.sectionKey !== 'education').length}
               className="px-6 py-3 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 disabled:bg-gray-400 transition-colors shadow-sm"
             >
-              {isLoading ? `Enhancing ${enhancementProgress.current}/${enhancementProgress.total}...` : '✨ Enhance All'}
+              {isLoading ? 'Enhancing all blocks...' : '✨ Enhance All (1 API Call!)'}
             </button>
 
             {enhancedCount > 0 && (
               <>
+                <button
+                  onClick={handleReEnhance}
+                  disabled={isLoading}
+                  className="px-6 py-3 bg-orange-600 text-white rounded-lg font-semibold hover:bg-orange-700 disabled:bg-gray-400 transition-colors shadow-sm"
+                >
+                  🔄 Re-Enhance Rejected
+                </button>
                 <button
                   onClick={handleAcceptAll}
                   className="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors shadow-sm"
@@ -466,7 +630,7 @@ export default function InteractiveStudio({
                     </div>
                   )}
 
-                  {/* Actions - Only for non-education sections */}
+                  {/* Actions */}
                   {sectionKey !== 'education' && block.enhancedText && block.status !== 'accepted' && block.status !== 'rejected' && (
                     <div className="flex gap-2 mt-3">
                       <button
@@ -474,6 +638,12 @@ export default function InteractiveStudio({
                         className="flex-1 py-2 bg-green-600 text-white rounded font-semibold hover:bg-green-700 text-sm"
                       >
                         ✓ Accept
+                      </button>
+                      <button
+                        onClick={() => handleEdit(block.id)}
+                        className="flex-1 py-2 bg-blue-600 text-white rounded font-semibold hover:bg-blue-700 text-sm"
+                      >
+                        ✏️ Edit
                       </button>
                       <button
                         onClick={() => handleReject(block.id)}
