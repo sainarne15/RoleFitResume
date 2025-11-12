@@ -1,15 +1,25 @@
 'use client';
 
 import { useState } from 'react';
-import FileUpload from './FileUpload';
-import LeftPanel from './LeftPanel';
-import RightPanel from './RightPanel';
-import Settings from './Settings';
 import { api } from '@/lib/api';
 import { Resume, ATSScore, VersionHistory } from '@/types';
+import FileUpload from './FileUpload';
 
-export default function QuickEnhance() {
-  // State
+interface QuickEnhanceProps {
+  onDataChange: (data: any) => void;
+  provider: string;
+  model: string;
+  apiKey: string;
+  globalApiKeys: Record<string, string>;
+}
+
+export default function QuickEnhance({
+  onDataChange,
+  provider,
+  model,
+  apiKey,
+  globalApiKeys
+}: QuickEnhanceProps) {
   const [originalResume, setOriginalResume] = useState<Resume | null>(null);
   const [enhancedResume, setEnhancedResume] = useState<string>('');
   const [jobDescription, setJobDescription] = useState<string>('');
@@ -19,25 +29,17 @@ export default function QuickEnhance() {
   const [currentVersion, setCurrentVersion] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
-  
-  // Settings state
-  const [provider, setProvider] = useState<string>('claude');
-  const [model, setModel] = useState<string>('claude-sonnet-4-20250514');
-  const [apiKey, setApiKey] = useState<string>('');
-  const [apiKeys, setApiKeys] = useState<Record<string, string>>({
-    openai: '',
-    claude: '',
-    openrouter: ''
-  });
+  const [uploadedFileName, setUploadedFileName] = useState<string>('');
 
   // Handle file upload
   const handleFileUpload = async (file: File) => {
     setIsLoading(true);
     setError('');
-    
+    setUploadedFileName(file.name);
+
     try {
       const result = await api.extractDocument(file);
-      
+
       if (result.success) {
         setOriginalResume({
           text: result.text,
@@ -45,27 +47,26 @@ export default function QuickEnhance() {
           word_count: result.word_count,
           line_count: result.line_count
         });
-        
-        // Calculate initial ATS score if JD exists
+
         if (jobDescription) {
           const score = await api.calculateScore(result.text, jobDescription);
           setOriginalScore(score);
         }
       } else {
         setError(result.error || 'Failed to extract document');
+        setUploadedFileName('');
       }
     } catch (err: any) {
       setError(err.message || 'Error uploading file');
+      setUploadedFileName('');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Handle job description change
   const handleJobDescriptionChange = async (jd: string) => {
     setJobDescription(jd);
-    
-    // Recalculate score if resume exists
+
     if (originalResume && jd) {
       try {
         const score = await api.calculateScore(originalResume.text, jd);
@@ -76,16 +77,14 @@ export default function QuickEnhance() {
     }
   };
 
-  // Enhance resume
   const handleEnhance = async () => {
     if (!originalResume || !jobDescription) {
       setError('Please upload resume and job description');
       return;
     }
 
-    const currentApiKey = apiKeys[provider];
-    if (!currentApiKey) {
-      setError(`Please provide API key for ${provider}`);
+    if (!apiKey) {
+      setError(`Please provide API key in the sidebar settings`);
       return;
     }
 
@@ -98,17 +97,15 @@ export default function QuickEnhance() {
         jobDescription,
         provider,
         model,
-        currentApiKey
+        apiKey
       );
 
       if (result.success) {
         setEnhancedResume(result.enhanced_resume);
-        
-        // Calculate enhanced score
+
         const score = await api.calculateScore(result.enhanced_resume, jobDescription);
         setEnhancedScore(score);
-        
-        // Add to history
+
         const newVersion = currentVersion + 1;
         setCurrentVersion(newVersion);
         setHistory([...history, {
@@ -117,6 +114,11 @@ export default function QuickEnhance() {
           ats_score: score.score,
           timestamp: new Date().toISOString()
         }]);
+
+        onDataChange({
+          resume: originalResume,
+          jobDescription: jobDescription
+        });
       } else {
         setError(result.error || 'Enhancement failed');
       }
@@ -127,12 +129,159 @@ export default function QuickEnhance() {
     }
   };
 
-  // Restore version from history
   const handleRestoreVersion = (version: VersionHistory) => {
     setEnhancedResume(version.resume);
     setEnhancedScore({ score: version.ats_score, breakdown: {} as any });
     setCurrentVersion(version.version);
   };
+
+  // Helper to render formatted resume
+  const renderFormattedResume = (resumeText: string, sections: any, isEnhanced: boolean = false) => {
+    return (
+      <div className="space-y-6">
+        {/* Header/Contact */}
+        {sections.header?.lines && sections.header.lines.length > 0 && (
+          <div className="pb-4 border-b-2 border-gray-300">
+            {sections.header.lines.map((line: string, idx: number) => (
+              <div key={idx} className="text-center">
+                {idx === 0 ? (
+                  <h2 className="text-2xl font-bold text-gray-900">{line}</h2>
+                ) : (
+                  <p className="text-sm text-gray-700">{line}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Summary */}
+        {sections.summary?.blocks && sections.summary.blocks.length > 0 && (
+          <div>
+            <h3 className="text-base font-bold text-gray-900 mb-2 uppercase tracking-wide border-b border-gray-300 pb-1">
+              SUMMARY
+            </h3>
+            {sections.summary.blocks.map((block: any, idx: number) => (
+              <p key={idx} className="text-sm text-gray-800 leading-relaxed mb-2">
+                {block.text}
+              </p>
+            ))}
+          </div>
+        )}
+
+        {/* Skills */}
+        {sections.skills?.blocks && sections.skills.blocks.length > 0 && (
+          <div>
+            <h3 className="text-base font-bold text-gray-900 mb-2 uppercase tracking-wide border-b border-gray-300 pb-1">
+              SKILLS
+            </h3>
+            <div className="space-y-1">
+              {sections.skills.blocks.map((block: any, idx: number) => (
+                <div key={idx} className="text-sm text-gray-800">
+                  • {block.text}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Experience */}
+        {sections.experience?.jobs && sections.experience.jobs.length > 0 && (
+          <div>
+            <h3 className="text-base font-bold text-gray-900 mb-2 uppercase tracking-wide border-b border-gray-300 pb-1">
+              EXPERIENCE
+            </h3>
+            {sections.experience.jobs.map((job: any, jobIdx: number) => (
+              <div key={jobIdx} className="mb-4">
+                <h4 className="text-sm font-bold text-gray-900 mb-2">{job.title}</h4>
+                <div className="space-y-1">
+                  {job.bullets.map((bullet: string, bulletIdx: number) => (
+                    <div key={bulletIdx} className="text-sm text-gray-800 pl-4">
+                      • {bullet}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Education */}
+        {sections.education?.blocks && sections.education.blocks.length > 0 && (
+          <div>
+            <h3 className="text-base font-bold text-gray-900 mb-2 uppercase tracking-wide border-b border-gray-300 pb-1">
+              EDUCATION
+            </h3>
+            {sections.education.blocks.map((block: any, idx: number) => (
+              <p key={idx} className="text-sm text-gray-800 mb-1">
+                {block.text}
+              </p>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Helper to highlight differences in enhanced text
+  const renderEnhancedWithHighlights = (enhancedText: string, originalText: string) => {
+    // Split into words for comparison
+    const originalWords = new Set(
+      originalText.toLowerCase()
+        .replace(/[.,!?;:()\[\]{}]/g, '')
+        .split(/\s+/)
+    );
+
+    // Split enhanced text into lines and words
+    const lines = enhancedText.split('\n');
+
+    return lines.map((line, lineIdx) => {
+      const trimmed = line.trim();
+
+      // Check if it's a section header
+      const isHeader = /^[A-Z\s]{3,}$/.test(trimmed) ||
+                      /^(SUMMARY|EXPERIENCE|EDUCATION|SKILLS|PROFILE)/i.test(trimmed);
+
+      if (isHeader) {
+        return (
+          <h3 key={lineIdx} className="text-base font-bold text-gray-900 mb-2 uppercase tracking-wide border-b border-gray-300 pb-1">
+            {line}
+          </h3>
+        );
+      }
+
+      if (!trimmed) {
+        return <div key={lineIdx} className="h-2" />;
+      }
+
+      // For content lines, highlight new words
+      const words = line.split(/(\s+)/);
+
+      return (
+        <div key={lineIdx} className="text-sm text-gray-800 leading-relaxed mb-1">
+          {words.map((word, widx) => {
+            if (!word.trim()) return word;
+
+            const cleanWord = word.toLowerCase().replace(/[.,!?;:()\[\]{}]/g, '');
+
+            // Highlight if word is new (not in original)
+            if (cleanWord.length > 2 && !originalWords.has(cleanWord)) {
+              return (
+                <span key={widx} className="bg-green-200 font-semibold px-1 rounded">
+                  {word}
+                </span>
+              );
+            }
+
+            return word;
+          })}
+        </div>
+      );
+    });
+  };
+
+  const wordCount = enhancedResume ? enhancedResume.split(/\s+/).length : 0;
+  const wordDiff = originalResume ? wordCount - originalResume.word_count : 0;
+  const isWithinTarget = Math.abs(wordDiff) <= 30;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
@@ -142,37 +291,28 @@ export default function QuickEnhance() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                📄 Resume ATS Enhancer
+                🚀 Quick Enhance
               </h1>
-              <p className="text-sm text-gray-500 mt-1">Quick Enhance Mode - Smart Resume Optimization</p>
+              <p className="text-sm text-gray-500 mt-1">One-click resume optimization</p>
             </div>
             <div className="text-sm text-gray-500">
-              Powered by AI • {provider === 'openai' ? 'OpenAI' : provider === 'claude' ? 'Claude' : 'OpenRouter'}
+              Using: <span className="font-semibold text-blue-600">{provider}</span> • {model.split('-')[0]}
             </div>
           </div>
         </div>
       </header>
 
       <div className="max-w-[1800px] mx-auto px-8 py-8">
-        {/* Settings */}
-        <Settings
-          provider={provider}
-          model={model}
-          apiKeys={apiKeys}
-          history={history}
-          onProviderChange={setProvider}
-          onModelChange={setModel}
-          onApiKeysChange={setApiKeys}
-          onRestoreVersion={handleRestoreVersion}
-        />
-
         {/* File Upload */}
-        <FileUpload
-          onFileUpload={handleFileUpload}
-          onJobDescriptionChange={handleJobDescriptionChange}
-          jobDescription={jobDescription}
-          isLoading={isLoading}
-        />
+        <div className="mb-8 bg-white rounded-xl shadow-lg p-6 border border-gray-200">
+          <FileUpload
+            onFileUpload={handleFileUpload}
+            onJobDescriptionChange={handleJobDescriptionChange}
+            jobDescription={jobDescription}
+            isLoading={isLoading}
+            uploadedFileName={uploadedFileName}
+          />
+        </div>
 
         {/* Error Display */}
         {error && (
@@ -214,13 +354,47 @@ export default function QuickEnhance() {
           </div>
         )}
 
-        {/* Action Buttons */}
+        {/* Version History */}
+        {history.length > 0 && (
+          <div className="mb-8 bg-white rounded-xl shadow-lg p-6 border border-gray-200">
+            <h3 className="text-sm font-bold text-gray-700 mb-4 flex items-center">
+              <span className="text-lg mr-2">📚</span> Version History ({history.length})
+            </h3>
+            <div className="space-y-2">
+              {history.slice().reverse().slice(0, 5).map((version) => (
+                <div
+                  key={version.version}
+                  className="flex items-center justify-between p-4 bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg hover:from-blue-50 hover:to-blue-100 cursor-pointer transition-all border border-gray-200 hover:border-blue-300 hover:shadow-md"
+                  onClick={() => handleRestoreVersion(version)}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-bold text-blue-600 bg-blue-100 px-3 py-1 rounded-full">
+                      v{version.version}
+                    </span>
+                    <span className={`text-sm font-semibold px-3 py-1 rounded-full ${
+                      version.ats_score >= 70 ? 'bg-green-100 text-green-700' : 
+                      version.ats_score >= 50 ? 'bg-yellow-100 text-yellow-700' : 
+                      'bg-red-100 text-red-700'
+                    }`}>
+                      Score: {version.ats_score.toFixed(1)}%
+                    </span>
+                  </div>
+                  <span className="text-xs text-gray-500">
+                    {new Date(version.timestamp).toLocaleString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Action Button */}
         {originalResume && jobDescription && (
-          <div className="mb-8 flex gap-4">
+          <div className="mb-8">
             <button
               onClick={handleEnhance}
               disabled={isLoading}
-              className="btn-primary flex-1 text-lg py-4"
+              className="btn-primary w-full text-lg py-4"
             >
               {isLoading ? (
                 <span className="flex items-center justify-center">
@@ -234,28 +408,78 @@ export default function QuickEnhance() {
                 '✨ Enhance Resume'
               )}
             </button>
-            <button
-              onClick={handleEnhance}
-              disabled={isLoading}
-              className="btn-secondary px-8 py-4"
-            >
-              🔄 Retry
-            </button>
           </div>
         )}
 
-        {/* Side by Side View */}
+        {/* Side by Side Resume View - FORMATTED LIKE FINAL PREVIEW */}
         {originalResume && (
           <div className="grid grid-cols-2 gap-8">
-            <LeftPanel
-              resume={originalResume}
-              jobDescription={jobDescription}
-            />
-            <RightPanel
-              enhancedResume={enhancedResume}
-              originalResume={originalResume.text}
-              currentVersion={currentVersion}
-            />
+            {/* Left: Original Resume - FORMATTED */}
+            <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
+              <h2 className="text-lg font-bold mb-4 flex items-center">
+                <span className="text-2xl mr-2">📄</span> Original Resume
+              </h2>
+              <div className="bg-gradient-to-br from-gray-50 to-slate-50 p-6 rounded-lg border-2 border-gray-200 max-h-[800px] overflow-y-auto custom-scrollbar">
+                {renderFormattedResume(originalResume.text, originalResume.sections, false)}
+              </div>
+            </div>
+
+            {/* Right: Enhanced Resume - FORMATTED WITH GREEN HIGHLIGHTS */}
+            <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-bold flex items-center">
+                  <span className="text-2xl mr-2">✨</span> Enhanced Resume
+                  {currentVersion > 0 && (
+                    <span className="ml-2 text-sm font-semibold text-green-600 bg-green-100 px-3 py-1 rounded-full">
+                      v{currentVersion}
+                    </span>
+                  )}
+                </h2>
+                {enhancedResume && (
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-semibold text-blue-600 bg-blue-100 px-3 py-1 rounded-full">
+                      {wordCount} words
+                    </span>
+                    <span className={`text-sm font-semibold px-3 py-1 rounded-full ${
+                      isWithinTarget ? 'text-green-600 bg-green-100' : 'text-orange-600 bg-orange-100'
+                    }`}>
+                      {wordDiff > 0 ? '+' : ''}{wordDiff} {isWithinTarget ? '✓' : '⚠'}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-gradient-to-br from-gray-50 to-slate-50 p-6 rounded-lg border-2 border-gray-200 max-h-[800px] overflow-y-auto custom-scrollbar">
+                {enhancedResume ? (
+                  renderEnhancedWithHighlights(enhancedResume, originalResume.text)
+                ) : (
+                  <div className="text-center py-32">
+                    <div className="text-6xl mb-4">📝</div>
+                    <p className="text-gray-400 text-lg">Enhanced resume will appear here...</p>
+                    <p className="text-gray-300 text-sm mt-2">Click "Enhance Resume" to get started</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Download Button */}
+              {enhancedResume && (
+                <div className="mt-6">
+                  <button
+                    onClick={() => {
+                      const blob = new Blob([enhancedResume], { type: 'text/plain' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `enhanced_resume_v${currentVersion}.txt`;
+                      a.click();
+                    }}
+                    className="btn-success w-full text-lg py-4"
+                  >
+                    📥 Download Enhanced Resume
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
