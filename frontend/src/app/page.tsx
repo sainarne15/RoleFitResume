@@ -25,11 +25,15 @@ export default function Home() {
     // Load saved settings
     const savedApiKeys = localStorage.getItem('apiKeys');
     if (savedApiKeys) {
-      const keys = JSON.parse(savedApiKeys);
-      setGlobalApiKeys(keys);
+      try {
+        const keys = JSON.parse(savedApiKeys);
+        setGlobalApiKeys(keys);
 
-      if (keys.anthropic) {
-        setApiKey(keys.anthropic);
+        if (keys.anthropic) {
+          setApiKey(keys.anthropic);
+        }
+      } catch (e) {
+        console.error('Error loading API keys:', e);
       }
     }
   }, []);
@@ -45,14 +49,26 @@ export default function Home() {
     };
 
     setModel(defaultModels[provider] || 'claude-sonnet-4-20250514');
-    setApiKey(globalApiKeys[provider] || '');
-  }, [provider, globalApiKeys, isClient]);
+
+    // Set API key from stored keys
+    if (globalApiKeys[provider]) {
+      setApiKey(globalApiKeys[provider]);
+    } else {
+      setApiKey('');
+    }
+  }, [provider, isClient]);
 
   const handleApiKeyChange = (key: string) => {
     setApiKey(key);
     const updatedKeys = { ...globalApiKeys, [provider]: key };
     setGlobalApiKeys(updatedKeys);
-    localStorage.setItem('apiKeys', JSON.stringify(updatedKeys));
+
+    try {
+      localStorage.setItem('apiKeys', JSON.stringify(updatedKeys));
+      console.log('API key saved for', provider);
+    } catch (e) {
+      console.error('Error saving API key:', e);
+    }
   };
 
   const handleDataChange = (data: any) => {

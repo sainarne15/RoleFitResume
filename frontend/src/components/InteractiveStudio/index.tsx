@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Resume } from '@/types';
 import { api } from '@/lib/api';
 import FileUpload from '../QuickEnhance/FileUpload';
@@ -40,6 +40,24 @@ export default function InteractiveStudio({
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [isEditingJD, setIsEditingJD] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState<string>('');
+  const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState<string>('');
+  const [currentScore, setCurrentScore] = useState<number>(0);
+  const [isCalculatingScore, setIsCalculatingScore] = useState(false);
+
+  // Sync with shared data when switching modes
+  useEffect(() => {
+    if (sharedData?.resume) {
+      setOriginalResume(sharedData.resume);
+      convertToBlocks(sharedData.resume.sections);
+    }
+  }, [sharedData?.resume]);
+
+  useEffect(() => {
+    if (sharedData?.jobDescription) {
+      setJobDescription(sharedData.jobDescription);
+    }
+  }, [sharedData?.jobDescription]);
 
   const handleFileUpload = async (file: File) => {
     setIsLoading(true);
@@ -73,6 +91,7 @@ export default function InteractiveStudio({
 
     const getSectionTitle = (key: string) => {
       const titles: Record<string, string> = {
+        'header': 'CONTACT INFORMATION',
         'summary': 'SUMMARY',
         'skills': 'SKILLS',
         'experience': 'EXPERIENCE',
@@ -87,6 +106,22 @@ export default function InteractiveStudio({
       };
       return titles[key] || key.toUpperCase();
     };
+
+    // Header/Contact Info
+    if (sections.header?.lines && sections.header.lines.length > 0) {
+      const contactText = sections.header.lines.join('\n');
+      if (contactText.trim()) {
+        newBlocks.push({
+          id: `block-${blockId++}`,
+          sectionKey: 'header',
+          sectionTitle: getSectionTitle('header'),
+          text: contactText,
+          enhancedText: '',
+          status: 'original',
+          type: 'text'
+        });
+      }
+    }
 
     // Summary
     if (sections.summary?.blocks && sections.summary.blocks.length > 0) {
@@ -183,6 +218,51 @@ export default function InteractiveStudio({
       });
     }
 
+    // Education - ADD THIS!
+    if (sections.education?.blocks) {
+      sections.education.blocks.forEach((block: any) => {
+        newBlocks.push({
+          id: `block-${blockId++}`,
+          sectionKey: 'education',
+          sectionTitle: getSectionTitle('education'),
+          text: block.text,
+          enhancedText: '',
+          status: 'original',
+          type: 'text'
+        });
+      });
+    }
+
+    // Publications
+    if (sections.publications?.blocks) {
+      sections.publications.blocks.forEach((block: any) => {
+        newBlocks.push({
+          id: `block-${blockId++}`,
+          sectionKey: 'publications',
+          sectionTitle: getSectionTitle('publications'),
+          text: block.text,
+          enhancedText: '',
+          status: 'original',
+          type: 'text'
+        });
+      });
+    }
+
+    // Volunteer
+    if (sections.volunteer?.blocks) {
+      sections.volunteer.blocks.forEach((block: any) => {
+        newBlocks.push({
+          id: `block-${blockId++}`,
+          sectionKey: 'volunteer',
+          sectionTitle: getSectionTitle('volunteer'),
+          text: block.text,
+          enhancedText: '',
+          status: 'original',
+          type: 'text'
+        });
+      });
+    }
+
     setBlocks(newBlocks);
   };
 
@@ -196,42 +276,47 @@ export default function InteractiveStudio({
     setIsLoading(true);
 
     try {
-      // Only enhance non-education blocks
-      const enhanceableBlocks = blocks.filter(b => b.sectionKey !== 'education');
+      // Only enhance these sections: summary, skills, experience, projects, awards, publications, volunteer
+      const enhanceableBlocks = blocks.filter(b =>
+        b.sectionKey !== 'header' &&
+        b.sectionKey !== 'education' &&
+        b.sectionKey !== 'certifications'
+      );
 
       // Build prompt with all blocks numbered
       const blocksText = enhanceableBlocks.map((block, idx) =>
         `[BLOCK ${idx + 1}]\n${block.text}`
       ).join('\n\n');
 
-      const fullPrompt = `You are a professional resume writer. I will give you ${enhanceableBlocks.length} resume blocks numbered [BLOCK 1], [BLOCK 2], etc.
-
-For each block, enhance it to be more impactful and ATS-friendly based on this job description:
-
+      const fullPrompt = `Job Description:
 ${jobDescription}
 
-IMPORTANT RULES:
-1. Keep enhancements concise (±10 words from original)
-2. Use strong action verbs
-3. Add quantifiable results where possible
-4. Match keywords from job description
-5. Maintain professional tone
-6. Keep the same structure (bullet points stay as bullets)
+---
 
-Original blocks:
+Below are ${enhanceableBlocks.length} resume blocks. Enhance each one to be more impactful and ATS-friendly based on the job description above.
+
+Rules:
+- Keep similar length (±10 words)
+- Use strong action verbs
+- Add metrics where possible
+- Match job keywords naturally
+- Stay professional
+
+Resume blocks to enhance:
+
 ${blocksText}
 
-Respond with ONLY the enhanced blocks in this EXACT format:
+---
+
+Respond with enhanced blocks in this exact format:
 
 [BLOCK 1]
-<enhanced version of block 1>
+<enhanced text>
 
 [BLOCK 2]
-<enhanced version of block 2>
+<enhanced text>
 
-...and so on for all ${enhanceableBlocks.length} blocks.
-
-DO NOT add any other text. Just the blocks with their numbers.`;
+Continue for all ${enhanceableBlocks.length} blocks.`;
 
       // Single API call for all blocks
       const result = await api.enhanceResume(
@@ -243,14 +328,19 @@ DO NOT add any other text. Just the blocks with their numbers.`;
       );
 
       if (result.success) {
+        console.log('Raw API response:', result.enhanced_resume);
+
         // Parse response to extract individual blocks
         const enhancedBlocks = parseEnhancedBlocks(result.enhanced_resume, enhanceableBlocks.length);
+
+        console.log('Parsed blocks:', enhancedBlocks);
+        console.log('Expected count:', enhanceableBlocks.length, 'Got:', enhancedBlocks.length);
 
         // Update blocks with enhancements
         let enhancedIdx = 0;
         const updatedBlocks = blocks.map(block => {
-          if (block.sectionKey === 'education') {
-            return block; // Skip education
+          if (block.sectionKey === 'header' || block.sectionKey === 'education' || block.sectionKey === 'certifications') {
+            return block; // Skip these sections
           }
 
           const enhanced = enhancedBlocks[enhancedIdx];
@@ -263,7 +353,10 @@ DO NOT add any other text. Just the blocks with their numbers.`;
           };
         });
 
+        console.log('Updated blocks:', updatedBlocks.filter(b => b.enhancedText));
         setBlocks(updatedBlocks);
+      } else {
+        console.error('API error:', result);
       }
     } catch (error) {
       console.error('Error enhancing blocks:', error);
@@ -283,9 +376,11 @@ DO NOT add any other text. Just the blocks with their numbers.`;
     setIsLoading(true);
 
     try {
-      // Only re-enhance rejected or pending blocks
+      // Only re-enhance rejected or pending blocks (exclude header, education, certifications)
       const blocksToEnhance = blocks.filter(b =>
+        b.sectionKey !== 'header' &&
         b.sectionKey !== 'education' &&
+        b.sectionKey !== 'certifications' &&
         (b.status === 'rejected' || (b.status === 'enhanced' && !b.enhancedText))
       );
 
@@ -300,22 +395,23 @@ DO NOT add any other text. Just the blocks with their numbers.`;
         `[BLOCK ${idx + 1}]\n${block.text}`
       ).join('\n\n');
 
-      const fullPrompt = `You are a professional resume writer. I will give you ${blocksToEnhance.length} resume blocks.
-
-Enhance each block based on this job description:
+      const fullPrompt = `Job Description:
 ${jobDescription}
 
-RULES: Keep concise (±10 words), use action verbs, add metrics, match job keywords.
+---
 
-Blocks:
+Enhance these ${blocksToEnhance.length} resume blocks to match the job description. Keep similar length, use action verbs, add metrics.
+
 ${blocksText}
 
-Respond with enhanced blocks in format:
+---
+
+Format:
 [BLOCK 1]
-<enhanced text>
+<enhanced>
 
 [BLOCK 2]
-<enhanced text>`;
+<enhanced>`;
 
       const result = await api.enhanceResume(fullPrompt, '', provider, model, apiKey);
 
@@ -387,13 +483,63 @@ Respond with enhanced blocks in format:
     const block = blocks.find(b => b.id === blockId);
     if (!block) return;
 
-    const newText = prompt('Edit the enhanced text:', block.enhancedText);
-    if (newText && newText.trim()) {
-      setBlocks(blocks.map(b =>
-        b.id === blockId ? { ...b, enhancedText: newText.trim() } : b
-      ));
+    setEditingBlockId(blockId);
+    setEditingText(block.enhancedText || block.text);
+  };
+
+  const handleSaveEdit = (blockId: string) => {
+    setBlocks(blocks.map(b =>
+      b.id === blockId ? { ...b, enhancedText: editingText.trim(), status: 'enhanced' } : b
+    ));
+    setEditingBlockId(null);
+    setEditingText('');
+  };
+
+  const handleCancelEdit = () => {
+    setEditingBlockId(null);
+    setEditingText('');
+  };
+
+  const handleChangeDecision = (blockId: string) => {
+    setBlocks(blocks.map(b =>
+      b.id === blockId ? { ...b, status: 'enhanced' } : b
+    ));
+  };
+
+  // Calculate ATS score for current state
+  const calculateCurrentScore = async () => {
+    if (!jobDescription || blocks.length === 0) return;
+
+    setIsCalculatingScore(true);
+    try {
+      // Build current resume text from accepted/enhanced blocks
+      const currentResume = blocks.map(b => {
+        if (b.status === 'accepted' && b.enhancedText) {
+          return b.enhancedText;
+        } else if (b.status === 'accepted') {
+          return b.text;
+        } else if (b.enhancedText) {
+          return b.enhancedText; // Show enhanced even if not accepted yet
+        } else {
+          return b.text;
+        }
+      }).join('\n');
+
+      const score = await api.calculateScore(currentResume, jobDescription);
+      setCurrentScore(score.overall_score);
+    } catch (error) {
+      console.error('Error calculating score:', error);
+    } finally {
+      setIsCalculatingScore(false);
     }
   };
+
+  // Recalculate score when blocks change
+  useEffect(() => {
+    if (blocks.length > 0 && jobDescription) {
+      calculateCurrentScore();
+    }
+  }, [blocks, jobDescription]);
 
   const handleAcceptAll = () => {
     setBlocks(blocks.map(b =>
@@ -443,7 +589,18 @@ Respond with enhanced blocks in format:
   const enhancedCount = blocks.filter(b => b.enhancedText).length;
   const acceptedCount = blocks.filter(b => b.status === 'accepted').length;
   const rejectedCount = blocks.filter(b => b.status === 'rejected').length;
-  const pendingCount = blocks.filter(b => b.sectionKey !== 'education' && b.status !== 'accepted' && b.status !== 'rejected').length;
+  const pendingCount = blocks.filter(b =>
+    b.sectionKey !== 'header' &&
+    b.sectionKey !== 'education' &&
+    b.sectionKey !== 'certifications' &&
+    b.status !== 'accepted' &&
+    b.status !== 'rejected'
+  ).length;
+  const totalEnhanceable = blocks.filter(b =>
+    b.sectionKey !== 'header' &&
+    b.sectionKey !== 'education' &&
+    b.sectionKey !== 'certifications'
+  ).length;
 
   // Group blocks by section
   const groupedBlocks = blocks.reduce((acc, block) => {
@@ -467,10 +624,26 @@ Respond with enhanced blocks in format:
               <p className="text-sm text-gray-500 mt-1">
                 {enhancedCount > 0
                   ? `${acceptedCount} accepted • ${rejectedCount} rejected • ${pendingCount} pending`
-                  : 'Click "Enhance All" for single API call (fast & cheap!)'}
+                  : 'Click "Enhance All" to start'}
+                {currentScore > 0 && (
+                  <span className={`ml-3 font-semibold ${
+                    currentScore >= 80 ? 'text-green-600' : 
+                    currentScore >= 60 ? 'text-yellow-600' : 'text-red-600'
+                  }`}>
+                    • ATS Score: {currentScore}%
+                  </span>
+                )}
               </p>
             </div>
             <div className="flex items-center gap-4">
+              {currentScore > 0 && (
+                <div className={`px-4 py-2 rounded-lg font-bold text-lg ${
+                  currentScore >= 80 ? 'bg-green-100 text-green-700' : 
+                  currentScore >= 60 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'
+                }`}>
+                  {isCalculatingScore ? '⏳ Calculating...' : `${currentScore}%`}
+                </div>
+              )}
               <div className="text-sm text-gray-500">
                 Using: <span className="font-semibold text-purple-600">{provider}</span> • {model.split('-')[0]}
               </div>
@@ -516,10 +689,10 @@ Respond with enhanced blocks in format:
           <div className="flex gap-3">
             <button
               onClick={handleEnhanceAll}
-              disabled={isLoading || enhancedCount === blocks.filter(b => b.sectionKey !== 'education').length}
+              disabled={isLoading || enhancedCount === totalEnhanceable}
               className="px-6 py-3 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 disabled:bg-gray-400 transition-colors shadow-sm"
             >
-              {isLoading ? 'Enhancing all blocks...' : '✨ Enhance All (1 API Call!)'}
+              {isLoading ? 'Enhancing all blocks...' : '✨ Enhance All'}
             </button>
 
             {enhancedCount > 0 && (
@@ -550,9 +723,63 @@ Respond with enhanced blocks in format:
           {acceptedCount > 0 && (
             <button
               onClick={() => {
-                const finalText = blocks.map(b =>
-                  b.status === 'accepted' && b.enhancedText ? b.enhancedText : b.text
-                ).join('\n\n');
+                // Build final resume with section headers
+                let finalText = '';
+
+                // Group blocks by section
+                const grouped = blocks.reduce((acc, b) => {
+                  if (!acc[b.sectionKey]) acc[b.sectionKey] = [];
+                  acc[b.sectionKey].push(b);
+                  return acc;
+                }, {} as Record<string, Block[]>);
+
+                // Render each section with header
+                const sectionOrder = ['header', 'summary', 'skills', 'experience', 'education', 'projects', 'certifications', 'awards', 'publications', 'volunteer', 'languages', 'interests'];
+
+                sectionOrder.forEach(sectionKey => {
+                  const sectionBlocks = grouped[sectionKey];
+                  if (!sectionBlocks || sectionBlocks.length === 0) return;
+
+                  // Add section header (except for contact/header)
+                  if (sectionKey !== 'header') {
+                    finalText += `\n${sectionBlocks[0].sectionTitle}\n`;
+                    finalText += '─'.repeat(sectionBlocks[0].sectionTitle.length) + '\n\n';
+                  }
+
+                  // Add blocks
+                  if (sectionKey === 'experience') {
+                    // Group by job
+                    const jobs = [...new Set(sectionBlocks.map(b => b.jobTitle))];
+                    jobs.forEach(jobTitle => {
+                      finalText += `${jobTitle}\n`;
+                      sectionBlocks
+                        .filter(b => b.jobTitle === jobTitle)
+                        .forEach(block => {
+                          const text = block.status === 'accepted' && block.enhancedText ? block.enhancedText : block.text;
+                          finalText += `• ${text}\n`;
+                        });
+                      finalText += '\n';
+                    });
+                  } else if (sectionKey === 'header') {
+                    // Contact info - no bullets
+                    sectionBlocks.forEach(block => {
+                      const text = block.status === 'accepted' && block.enhancedText ? block.enhancedText : block.text;
+                      finalText += `${text}\n`;
+                    });
+                    finalText += '\n';
+                  } else {
+                    // Other sections
+                    sectionBlocks.forEach(block => {
+                      const text = block.status === 'accepted' && block.enhancedText ? block.enhancedText : block.text;
+                      if (sectionKey === 'skills') {
+                        finalText += `• ${text}\n`;
+                      } else {
+                        finalText += `${text}\n`;
+                      }
+                    });
+                    finalText += '\n';
+                  }
+                });
 
                 const blob = new Blob([finalText], { type: 'text/plain' });
                 const url = URL.createObjectURL(blob);
@@ -574,7 +801,7 @@ Respond with enhanced blocks in format:
         {/* LEFT: Grouped Suggestions */}
         <div className="w-1/2 bg-white border-r border-gray-200 overflow-y-auto p-6">
           <h3 className="text-lg font-bold mb-4 text-gray-900">
-            📝 Review Enhancements ({enhancedCount}/{blocks.filter(b => b.sectionKey !== 'education').length} enhanced)
+            📝 Review Enhancements ({enhancedCount}/{totalEnhanceable} enhanced)
           </h3>
 
           {/* Render sections in groups */}
@@ -584,9 +811,9 @@ Respond with enhanced blocks in format:
               <div className="bg-gradient-to-r from-purple-100 to-pink-100 border-2 border-purple-300 rounded-lg p-3 mb-3">
                 <h4 className="text-base font-bold text-purple-900 uppercase tracking-wide">
                   {sectionBlocks[0].sectionTitle}
-                  {sectionKey === 'education' && (
+                  {(sectionKey === 'header' || sectionKey === 'education' || sectionKey === 'certifications') && (
                     <span className="ml-2 text-xs font-normal text-purple-700 bg-purple-200 px-2 py-1 rounded">
-                      Display Only (Not Enhanced)
+                      Edit Only (Not Enhanced)
                     </span>
                   )}
                 </h4>
@@ -596,77 +823,285 @@ Respond with enhanced blocks in format:
               </div>
 
               {/* Blocks in this section */}
-              {sectionBlocks.map((block) => (
-                <div
-                  key={block.id}
-                  className={`mb-3 p-4 rounded-lg border-2 transition-all ${
-                    block.status === 'accepted' 
-                      ? 'border-green-500 bg-green-50' 
-                      : block.status === 'rejected'
-                      ? 'border-gray-300 bg-gray-50'
-                      : block.enhancedText
-                      ? 'border-blue-400 bg-blue-50'
-                      : 'border-gray-200 bg-white'
-                  }`}
-                >
-                  {/* Job Title (for experience) */}
-                  {block.jobTitle && (
-                    <div className="text-xs text-gray-600 mb-2 font-medium">
-                      → {block.jobTitle}
-                    </div>
-                  )}
+              {sectionKey === 'experience' ? (
+                /* Experience: Group by jobs with subsection boxes */
+                (() => {
+                  const jobs = [...new Set(sectionBlocks.map(b => b.jobTitle))];
+                  return jobs.map(jobTitle => {
+                    const jobBlocks = sectionBlocks.filter(b => b.jobTitle === jobTitle);
+                    return (
+                      <div key={jobTitle} className="mb-4">
+                        {/* Job Subsection Box */}
+                        <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border-2 border-indigo-200 rounded-lg p-2 mb-2">
+                          <h5 className="text-sm font-bold text-indigo-900">
+                            {jobTitle}
+                          </h5>
+                          <p className="text-xs text-indigo-600 mt-1">
+                            {jobBlocks.length} {jobBlocks.length === 1 ? 'bullet' : 'bullets'}
+                          </p>
+                        </div>
 
-                  {/* Original */}
-                  <div className="mb-3">
-                    <label className="text-xs font-semibold text-gray-600 uppercase mb-1 block">Original:</label>
-                    <p className="text-sm text-gray-800 leading-relaxed">{block.text}</p>
-                  </div>
+                        {/* Bullets for this job */}
+                        {jobBlocks.map((block) => (
+                          <div
+                            key={block.id}
+                            className={`mb-3 ml-4 p-4 rounded-lg border-2 transition-all ${
+                              block.status === 'accepted' 
+                                ? 'border-green-500 bg-green-50' 
+                                : block.status === 'rejected'
+                                ? 'border-gray-300 bg-gray-50'
+                                : block.enhancedText
+                                ? 'border-blue-400 bg-blue-50'
+                                : 'border-gray-200 bg-white'
+                            }`}
+                          >
+                            {/* Original */}
+                            <div className="mb-3">
+                              <label className="text-xs font-semibold text-gray-600 uppercase mb-1 block">Original:</label>
+                              <p className="text-sm text-gray-800 leading-relaxed">{block.text}</p>
+                            </div>
 
-                  {/* Enhanced (if available) */}
-                  {block.enhancedText && (
+                            {/* Enhanced */}
+                            {block.enhancedText && (
+                              <div className="mb-3">
+                                <label className="text-xs font-semibold text-green-700 uppercase mb-1 block">Enhanced:</label>
+                                {editingBlockId === block.id ? (
+                                  <div>
+                                    <textarea
+                                      value={editingText}
+                                      onChange={(e) => setEditingText(e.target.value)}
+                                      className="w-full h-32 px-3 py-2 border-2 border-blue-400 rounded text-sm resize-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    <div className="flex gap-2 mt-2">
+                                      <button
+                                        onClick={() => handleSaveEdit(block.id)}
+                                        className="flex-1 py-1 bg-green-600 text-white rounded text-xs font-semibold hover:bg-green-700"
+                                      >
+                                        💾 Save
+                                      </button>
+                                      <button
+                                        onClick={handleCancelEdit}
+                                        className="flex-1 py-1 bg-gray-400 text-white rounded text-xs font-semibold hover:bg-gray-500"
+                                      >
+                                        ✗ Cancel
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <p className="text-sm text-gray-800 leading-relaxed bg-green-100 p-2 rounded">{block.enhancedText}</p>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Actions */}
+                            {block.enhancedText && block.status === 'enhanced' && (
+                              <div className="flex gap-2 mt-3">
+                                <button
+                                  onClick={() => handleAccept(block.id)}
+                                  className="flex-1 py-2 bg-green-600 text-white rounded font-semibold hover:bg-green-700 text-sm"
+                                >
+                                  ✓ Accept
+                                </button>
+                                <button
+                                  onClick={() => handleEdit(block.id)}
+                                  className="flex-1 py-2 bg-blue-600 text-white rounded font-semibold hover:bg-blue-700 text-sm"
+                                >
+                                  ✏️ Edit
+                                </button>
+                                <button
+                                  onClick={() => handleReject(block.id)}
+                                  className="flex-1 py-2 bg-gray-400 text-white rounded font-semibold hover:bg-gray-500 text-sm"
+                                >
+                                  ✗ Reject
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Status Badge with Change Option */}
+                            {block.status === 'accepted' && (
+                              <div className="mt-3">
+                                <div className="text-center text-sm font-semibold text-green-700 bg-green-200 py-2 rounded mb-2">
+                                  ✓ Accepted
+                                </div>
+                                <button
+                                  onClick={() => handleChangeDecision(block.id)}
+                                  className="w-full py-1 text-xs text-blue-600 hover:text-blue-800 font-medium"
+                                >
+                                  Change decision
+                                </button>
+                              </div>
+                            )}
+                            {block.status === 'rejected' && (
+                              <div className="mt-3">
+                                <div className="text-center text-sm font-semibold text-gray-700 bg-gray-200 py-2 rounded mb-2">
+                                  ✗ Rejected (Using Original)
+                                </div>
+                                <button
+                                  onClick={() => handleChangeDecision(block.id)}
+                                  className="w-full py-1 text-xs text-blue-600 hover:text-blue-800 font-medium"
+                                >
+                                  Change decision
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  });
+                })()
+              ) : (
+                /* Other sections: Regular blocks */
+                sectionBlocks.map((block) => (
+                  <div
+                    key={block.id}
+                    className={`mb-3 p-4 rounded-lg border-2 transition-all ${
+                      block.status === 'accepted' 
+                        ? 'border-green-500 bg-green-50' 
+                        : block.status === 'rejected'
+                        ? 'border-gray-300 bg-gray-50'
+                        : block.enhancedText
+                        ? 'border-blue-400 bg-blue-50'
+                        : 'border-gray-200 bg-white'
+                    }`}
+                  >
+                    {/* Original */}
                     <div className="mb-3">
-                      <label className="text-xs font-semibold text-green-700 uppercase mb-1 block">Enhanced:</label>
-                      <p className="text-sm text-gray-800 leading-relaxed bg-green-100 p-2 rounded">{block.enhancedText}</p>
+                      <label className="text-xs font-semibold text-gray-600 uppercase mb-1 block">Original:</label>
+                      <p className="text-sm text-gray-800 leading-relaxed">{block.text}</p>
                     </div>
-                  )}
 
-                  {/* Actions */}
-                  {sectionKey !== 'education' && block.enhancedText && block.status !== 'accepted' && block.status !== 'rejected' && (
-                    <div className="flex gap-2 mt-3">
-                      <button
-                        onClick={() => handleAccept(block.id)}
-                        className="flex-1 py-2 bg-green-600 text-white rounded font-semibold hover:bg-green-700 text-sm"
-                      >
-                        ✓ Accept
-                      </button>
-                      <button
-                        onClick={() => handleEdit(block.id)}
-                        className="flex-1 py-2 bg-blue-600 text-white rounded font-semibold hover:bg-blue-700 text-sm"
-                      >
-                        ✏️ Edit
-                      </button>
-                      <button
-                        onClick={() => handleReject(block.id)}
-                        className="flex-1 py-2 bg-gray-400 text-white rounded font-semibold hover:bg-gray-500 text-sm"
-                      >
-                        ✗ Reject
-                      </button>
-                    </div>
-                  )}
+                    {/* Enhanced (if available) */}
+                    {block.enhancedText && (
+                      <div className="mb-3">
+                        <label className="text-xs font-semibold text-green-700 uppercase mb-1 block">Enhanced:</label>
+                        {editingBlockId === block.id ? (
+                          <div>
+                            <textarea
+                              value={editingText}
+                              onChange={(e) => setEditingText(e.target.value)}
+                              className="w-full h-32 px-3 py-2 border-2 border-blue-400 rounded text-sm resize-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            <div className="flex gap-2 mt-2">
+                              <button
+                                onClick={() => handleSaveEdit(block.id)}
+                                className="flex-1 py-1 bg-green-600 text-white rounded text-xs font-semibold hover:bg-green-700"
+                              >
+                                💾 Save
+                              </button>
+                              <button
+                                onClick={handleCancelEdit}
+                                className="flex-1 py-1 bg-gray-400 text-white rounded text-xs font-semibold hover:bg-gray-500"
+                              >
+                                ✗ Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-800 leading-relaxed bg-green-100 p-2 rounded">{block.enhancedText}</p>
+                        )}
+                      </div>
+                    )}
 
-                  {/* Status Badge */}
-                  {block.status === 'accepted' && (
-                    <div className="mt-3 text-center text-sm font-semibold text-green-700 bg-green-200 py-2 rounded">
-                      ✓ Accepted
-                    </div>
-                  )}
-                  {block.status === 'rejected' && (
-                    <div className="mt-3 text-center text-sm font-semibold text-gray-700 bg-gray-200 py-2 rounded">
-                      ✗ Rejected (Using Original)
-                    </div>
-                  )}
-                </div>
-              ))}
+                    {/* Actions - Only for sections that get enhanced */}
+                    {sectionKey !== 'header' && sectionKey !== 'education' && sectionKey !== 'certifications' && block.enhancedText && block.status === 'enhanced' && (
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          onClick={() => handleAccept(block.id)}
+                          className="flex-1 py-2 bg-green-600 text-white rounded font-semibold hover:bg-green-700 text-sm"
+                        >
+                          ✓ Accept
+                        </button>
+                        <button
+                          onClick={() => handleEdit(block.id)}
+                          className="flex-1 py-2 bg-blue-600 text-white rounded font-semibold hover:bg-blue-700 text-sm"
+                        >
+                          ✏️ Edit
+                        </button>
+                        <button
+                          onClick={() => handleReject(block.id)}
+                          className="flex-1 py-2 bg-gray-400 text-white rounded font-semibold hover:bg-gray-500 text-sm"
+                        >
+                          ✗ Reject
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Edit-only button for header/education/certifications */}
+                    {(sectionKey === 'header' || sectionKey === 'education' || sectionKey === 'certifications') && (
+                      <div className="mt-3">
+                        {editingBlockId === block.id ? (
+                          <div>
+                            <textarea
+                              value={editingText}
+                              onChange={(e) => setEditingText(e.target.value)}
+                              className="w-full h-32 px-3 py-2 border-2 border-blue-400 rounded text-sm resize-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            <div className="flex gap-2 mt-2">
+                              <button
+                                onClick={() => {
+                                  setBlocks(prev => prev.map(b =>
+                                    b.id === block.id ? { ...b, text: editingText.trim(), status: 'accepted' } : b
+                                  ));
+                                  setEditingBlockId(null);
+                                  setEditingText('');
+                                }}
+                                className="flex-1 py-1 bg-green-600 text-white rounded text-xs font-semibold hover:bg-green-700"
+                              >
+                                💾 Save
+                              </button>
+                              <button
+                                onClick={handleCancelEdit}
+                                className="flex-1 py-1 bg-gray-400 text-white rounded text-xs font-semibold hover:bg-gray-500"
+                              >
+                                ✗ Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setEditingBlockId(block.id);
+                              setEditingText(block.text);
+                            }}
+                            className="w-full py-2 bg-blue-600 text-white rounded font-semibold hover:bg-blue-700 text-sm"
+                          >
+                            ✏️ Edit Only
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Status Badge with Change Option */}
+                    {block.status === 'accepted' && (
+                      <div className="mt-3">
+                        <div className="text-center text-sm font-semibold text-green-700 bg-green-200 py-2 rounded mb-2">
+                          ✓ Accepted
+                        </div>
+                        <button
+                          onClick={() => handleChangeDecision(block.id)}
+                          className="w-full py-1 text-xs text-blue-600 hover:text-blue-800 font-medium"
+                        >
+                          Change decision
+                        </button>
+                      </div>
+                    )}
+                    {block.status === 'rejected' && (
+                      <div className="mt-3">
+                        <div className="text-center text-sm font-semibold text-gray-700 bg-gray-200 py-2 rounded mb-2">
+                          ✗ Rejected (Using Original)
+                        </div>
+                        <button
+                          onClick={() => handleChangeDecision(block.id)}
+                          className="w-full py-1 text-xs text-blue-600 hover:text-blue-800 font-medium"
+                        >
+                          Change decision
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
           ))}
         </div>
@@ -692,7 +1127,7 @@ Respond with enhanced blocks in format:
             )}
 
             {/* Render each section */}
-            {['summary', 'skills', 'experience', 'education', 'projects', 'certifications', 'awards'].map(sectionKey => {
+            {['summary', 'skills', 'experience', 'education', 'projects', 'certifications', 'awards', 'publications', 'volunteer', 'languages', 'interests'].map(sectionKey => {
               const sectionBlocks = groupedBlocks[sectionKey];
               if (!sectionBlocks || sectionBlocks.length === 0) return null;
 
@@ -724,7 +1159,7 @@ Respond with enhanced blocks in format:
                     // Regular blocks
                     sectionBlocks.map(block => (
                       <div key={block.id} className="text-sm text-gray-800 mb-1">
-                        {sectionKey === 'skills' && '• '}
+                        {sectionKey === 'skills' ? '• ' : ''}
                         {block.status === 'accepted' && block.enhancedText ? block.enhancedText : block.text}
                       </div>
                     ))
