@@ -19,12 +19,12 @@ class LLMService:
         }
 
     def enhance_resume(
-            self,
-            resume: str,
-            job_description: str,
-            provider: str,
-            model: str,
-            api_key: str
+        self,
+        resume: str,
+        job_description: str,
+        provider: str,
+        model: str,
+        api_key: str
     ) -> Dict:
         """Enhance resume using specified LLM provider"""
 
@@ -48,7 +48,7 @@ class LLMService:
             }
 
     def _build_prompt(self, resume: str, job_desc: str) -> str:
-        """Build the enhancement prompt - YOUR ORIGINAL WORKING PROMPT"""
+        """Build the enhancement prompt - STRICT LENGTH CONTROL"""
         original_word_count = len(resume.split())
 
         return f"""You are an expert resume writer and ATS optimization specialist. Your goal is to make STRATEGIC, TARGETED enhancements while preserving the resume's core structure and strong existing content.
@@ -59,75 +59,83 @@ Job Description:
 Current Resume (Word count: {original_word_count}):
 {resume}
 
-ENHANCEMENT STRATEGY (CRITICAL - FOLLOW EXACTLY):
+CRITICAL LENGTH REQUIREMENT:
+• Target word count: {original_word_count} words (±30 words acceptable)
+• Current: {original_word_count} words → Target range: {original_word_count - 30} to {original_word_count + 30} words
+• Prefer staying closer to original, but ±30 is acceptable
+• DO NOT remove bullet points or job experiences
+• If you add keywords, compensate by being more concise elsewhere
 
-1. ANALYZE THE JOB DESCRIPTION - Extract Keywords Dynamically:
-   • Identify ALL key technologies, tools, frameworks, libraries mentioned in the JD
-   • Note methodologies (e.g., Agile, TDD, CI/CD, DevOps)
+ENHANCEMENT STRATEGY:
+
+1. ANALYZE THE JOB DESCRIPTION - Extract Keywords:
+   • Identify key technologies, tools, frameworks, libraries from JD
+   • Note methodologies (Agile, TDD, CI/CD, DevOps)
    • Find required soft skills and domain knowledge
-   • Identify industry-specific buzzwords and terminology
-   • Look for process terms (SDLC, architecture standards, compliance, etc.)
+   • Identify industry-specific terminology
 
-2. COMPARE WITH RESUME - Find Enhancement Opportunities:
-   • Which JD keywords are MISSING from the resume entirely?
-   • Which are mentioned but could be emphasized more?
-   • Which bullet points are generic and could incorporate JD language?
-   • Which sections lack specificity or metrics?
-   • IMPORTANT: Which bullet points are already strong and relevant? → LEAVE THESE UNCHANGED
+2. STRATEGIC ENHANCEMENTS (What to Change):
+   A) Replace vague words with JD-specific keywords:
+      - "databases" → specific DB names from JD
+      - "worked on" → specific action verb + technology
+      - "various projects" → name actual project types from JD
+   
+   B) Add missing JD keywords naturally:
+      - Weave into existing bullet points
+      - Don't create new bullet points
+      - Replace generic terms with specific ones
+   
+   C) Quantify where possible:
+      - Add metrics to vague statements
+      - Add scale/impact to existing points
 
-3. STRATEGIC KEYWORD INTEGRATION:
-   A) Summary Section:
-      - Add 3-5 of the MOST IMPORTANT keywords from the JD that align with the candidate's experience
-      - Only add if truthful based on existing work history
+3. PRESERVATION RULES (What NOT to Change):
+   ✗ DO NOT remove bullet points
+   ✗ DO NOT remove job experiences
+   ✗ DO NOT shorten sections significantly
+   ✗ DO NOT change structure, job titles, dates, company names
+   ✗ DO NOT remove strong achievements
+   ✗ Keep ALL contact information unchanged
+   ✗ Keep ALL education, certifications exactly as written
 
-   B) Skills Section:
-      - Add missing technologies/tools from JD that the candidate has likely used based on their experience
-      - Group related skills (e.g., if they have Jest, add similar testing tools from JD)
-      - DO NOT add skills with no basis in the experience section
+4. LENGTH DISCIPLINE (CRITICAL):
+   For EVERY word you ADD, you MUST:
+   • Remove filler words ("various", "multiple", "different")
+   • Remove redundant phrases ("in order to" → "to")
+   • Combine similar points if absolutely needed
+   • Make language more concise
+   
+   Example of length-neutral enhancement:
+   BEFORE (10 words): "Worked on various projects using different databases and tools"
+   AFTER (10 words): "Developed applications using PostgreSQL, MongoDB, Redis, Docker"
+   
+   Example of WRONG approach (reduced words):
+   BEFORE (10 words): "Worked on various projects using different databases and tools"  
+   AFTER (5 words): "Developed database applications" ← WRONG! Too short!
 
-   C) Experience Bullets:
-      - Weave JD keywords naturally into existing accomplishments
-      - Be specific with tech stacks mentioned in JD (e.g., instead of "databases" → name specific DBs from JD)
-      - Add methodology keywords where they fit (e.g., if QA/testing mentioned, add testing methodologies from JD)
-      - Replace vague terms with specific JD language
+5. AUTHENTICITY:
+   • Every enhancement must be truthful
+   • Only add keywords that fit the actual experience
+   • If JD keyword doesn't fit, don't force it
 
-4. ENHANCEMENT RULES (What to Change):
-   ✓ Generic statements → Add JD-specific details and metrics
-   ✓ Vague tech mentions → Replace with specific tools/frameworks from JD
-   ✓ Weak action verbs → Upgrade to power verbs
-   ✓ Missing JD keywords → Integrate naturally into relevant bullets
-   ✓ Bullets without metrics → Add quantifiable results where possible
-   ✓ Process descriptions → Use JD's terminology (e.g., their SDLC language)
+FINAL VERIFICATION BEFORE RETURNING:
+❗ Word count within {original_word_count} ± 30 words? (Count the words!)
+❗ Did I preserve ALL bullet points?
+❗ Did I preserve ALL job experiences?
+❗ Did I enhance weak points with JD keywords?
+❗ Are changes truthful and based on existing experience?
 
-5. PRESERVATION RULES (What NOT to Change):
-   ✗ DO NOT modify bullets that already have: strong metrics, JD-relevant keywords, specific achievements
-   ✗ DO NOT change structure: same sections, job titles, dates, company names
-   ✗ DO NOT add new experiences or fabricate achievements
-   ✗ DO NOT modify education, certifications, or awards
-   ✗ DO NOT add technologies that have no basis in experience
+RESPONSE FORMAT:
+Return ONLY the enhanced resume text maintaining EXACT same structure and line breaks.
+NO preamble, NO explanations, NO markdown - just the resume content.
+Keep all bullet points, headers, and formatting intact.
 
-6. LENGTH DISCIPLINE:
-   • Target: {original_word_count} words (±10 words maximum)
-   • If adding keywords increases length, compensate by:
-     - Removing filler words and redundancy
-     - Condensing less relevant bullets
-     - Combining related points
-   • Prioritize: JD-relevant content stays/expands, less relevant content condenses
-
-7. AUTHENTICITY CHECK:
-   • Every enhancement must be truthful and based on existing experience
-   • Keywords should align with work already described
-   • If a JD keyword doesn't fit the candidate's background, DO NOT force it
-   • Aim for 40-60% of content modified, leaving strong points unchanged
-
-FINAL VERIFICATION:
-- Did I preserve strong, relevant bullet points unchanged?
-- Did I extract keywords FROM THE JD (not use generic examples)?
-- Are all enhancements truthful and aligned with existing experience?
-- Is word count within {original_word_count} ± 10 words?
-- Does this resume now better match THIS SPECIFIC job description?
-
-Return ONLY the enhanced resume text with the same format and structure. No preamble, no explanations."""
+CRITICAL - DO NOT ADD ANY ANNOTATIONS:
+❌ DO NOT add phrases like "added from JD", "enhanced", "[keyword]", or any meta-commentary
+❌ DO NOT add brackets, parentheses, or notes about what was changed
+❌ Return ONLY the actual resume text as it should appear
+❌ NO explanatory text before or after the resume content
+✅ The output should look like a real, polished resume - not a marked-up draft"""
 
     def _call_openai(self, resume: str, job_desc: str, model: str, api_key: str) -> str:
         """Call OpenAI API"""
