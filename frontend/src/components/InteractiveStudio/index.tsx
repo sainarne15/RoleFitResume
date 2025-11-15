@@ -42,6 +42,9 @@ export default function InteractiveStudio({
   const [uploadedFileName, setUploadedFileName] = useState<string>('');
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState<string>('');
+
+  // ATS Score state
+  const [originalScore, setOriginalScore] = useState<number>(0);
   const [currentScore, setCurrentScore] = useState<number>(0);
   const [isCalculatingScore, setIsCalculatingScore] = useState(false);
 
@@ -59,6 +62,64 @@ export default function InteractiveStudio({
     }
   }, [sharedData?.jobDescription]);
 
+  // Calculate ATS score whenever blocks or JD changes
+  useEffect(() => {
+    if (blocks.length > 0 && jobDescription.trim()) {
+      calculateCurrentScore();
+    }
+  }, [blocks, jobDescription]);
+
+  // Calculate initial score when resume is uploaded
+  useEffect(() => {
+    if (originalResume && jobDescription.trim() && blocks.length > 0) {
+      calculateCurrentScore();
+    }
+  }, [originalResume, blocks.length]);
+
+  const calculateCurrentScore = async () => {
+    if (!jobDescription || blocks.length === 0) return;
+
+    setIsCalculatingScore(true);
+    try {
+      // Build ORIGINAL resume (all original text)
+      const originalResumeText = blocks.map(b => b.text).join('\n');
+
+      // Build CURRENT/ENHANCED resume (accepted/enhanced text)
+      const currentResumeText = blocks.map(b => {
+        // For accepted blocks with enhancements
+        if (b.status === 'accepted' && b.enhancedText) {
+          return b.enhancedText;
+        }
+        // For enhanced blocks (not yet accepted/rejected)
+        else if (b.enhancedText) {
+          return b.enhancedText;
+        }
+        // Original text (including header)
+        else {
+          return b.text;
+        }
+      }).join('\n');
+
+      console.log('Calculating BOTH scores...');
+
+      // Calculate both scores in parallel
+      const [originalScoreResult, currentScoreResult] = await Promise.all([
+        api.calculateScore(originalResumeText, jobDescription),
+        api.calculateScore(currentResumeText, jobDescription)
+      ]);
+
+      console.log('Original Score:', originalScoreResult);
+      console.log('Current/Enhanced Score:', currentScoreResult);
+
+      setOriginalScore(originalScoreResult.score);
+      setCurrentScore(currentScoreResult.score);
+    } catch (error) {
+      console.error('Error calculating score:', error);
+    } finally {
+      setIsCalculatingScore(false);
+    }
+  };
+
   const handleFileUpload = async (file: File) => {
     setIsLoading(true);
     setUploadedFileName(file.name);
@@ -74,6 +135,7 @@ export default function InteractiveStudio({
           line_count: result.line_count
         };
         setOriginalResume(resume);
+        // Update parent with both resume and JD
         onDataChange({ resume, jobDescription });
         convertToBlocks(result.sections);
       }
@@ -82,6 +144,14 @@ export default function InteractiveStudio({
       setUploadedFileName('');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleJobDescriptionChange = (jd: string) => {
+    setJobDescription(jd);
+    // Update parent immediately when JD changes
+    if (originalResume) {
+      onDataChange({ resume: originalResume, jobDescription: jd });
     }
   };
 
@@ -110,6 +180,7 @@ export default function InteractiveStudio({
     // Header/Contact Info
     if (sections.header?.lines && sections.header.lines.length > 0) {
       const contactText = sections.header.lines.join('\n');
+      console.log('Header detected from sections.header.lines:', contactText);
       if (contactText.trim()) {
         newBlocks.push({
           id: `block-${blockId++}`,
@@ -120,6 +191,48 @@ export default function InteractiveStudio({
           status: 'original',
           type: 'text'
         });
+        console.log('Header block created from sections.header.lines');
+      }
+    } else {
+      console.log('No sections.header.lines found, checking sections object:', sections);
+
+      // FALLBACK: Try to extract header from raw text if backend didn't parse it
+      // Get first lines before any section keyword
+      if (originalResume?.text) {
+        const allLines = originalResume.text.split('\n');
+        const headerLines: string[] = [];
+
+        for (const line of allLines) {
+          const lineLower = line.toLowerCase().trim();
+          // Stop at first section keyword
+          if (lineLower.includes('summary') || lineLower.includes('experience') ||
+              lineLower.includes('education') || lineLower.includes('skills') ||
+              lineLower.includes('objective') || lineLower.includes('profile')) {
+            break;
+          }
+          if (line.trim()) {
+            headerLines.push(line);
+          }
+          // Stop after 10 lines max
+          if (headerLines.length >= 10) break;
+        }
+
+        if (headerLines.length > 0) {
+          const contactText = headerLines.join('\n');
+          console.log('Header extracted from raw text (fallback):', contactText);
+          newBlocks.push({
+            id: `block-${blockId++}`,
+            sectionKey: 'header',
+            sectionTitle: getSectionTitle('header'),
+            text: contactText,
+            enhancedText: '',
+            status: 'original',
+            type: 'text'
+          });
+          console.log('Header block created from fallback extraction');
+        } else {
+          console.warn('Could not extract header from raw text either');
+        }
       }
     }
 
@@ -173,6 +286,21 @@ export default function InteractiveStudio({
       });
     }
 
+    // Education
+    if (sections.education?.blocks) {
+      sections.education.blocks.forEach((block: any) => {
+        newBlocks.push({
+          id: `block-${blockId++}`,
+          sectionKey: 'education',
+          sectionTitle: getSectionTitle('education'),
+          text: block.text,
+          enhancedText: '',
+          status: 'original',
+          type: 'text'
+        });
+      });
+    }
+
     // Projects
     if (sections.projects?.blocks) {
       sections.projects.blocks.forEach((block: any) => {
@@ -218,21 +346,6 @@ export default function InteractiveStudio({
       });
     }
 
-    // Education - ADD THIS!
-    if (sections.education?.blocks) {
-      sections.education.blocks.forEach((block: any) => {
-        newBlocks.push({
-          id: `block-${blockId++}`,
-          sectionKey: 'education',
-          sectionTitle: getSectionTitle('education'),
-          text: block.text,
-          enhancedText: '',
-          status: 'original',
-          type: 'text'
-        });
-      });
-    }
-
     // Publications
     if (sections.publications?.blocks) {
       sections.publications.blocks.forEach((block: any) => {
@@ -264,6 +377,21 @@ export default function InteractiveStudio({
     }
 
     setBlocks(newBlocks);
+    console.log('Total blocks created:', newBlocks.length);
+    console.log('Blocks by section:', newBlocks.reduce((acc, b) => {
+      acc[b.sectionKey] = (acc[b.sectionKey] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>));
+
+    // Trigger score calculation immediately after blocks are set
+    if (jobDescription.trim() && newBlocks.length > 0) {
+      console.log('Triggering ATS score calculation...');
+      setTimeout(() => {
+        calculateCurrentScore();
+      }, 100); // Reduced to 100ms
+    } else {
+      console.log('Skipping score calculation:', { hasJD: !!jobDescription.trim(), blockCount: newBlocks.length });
+    }
   };
 
   // SINGLE API CALL - Enhance all blocks at once!
@@ -276,14 +404,12 @@ export default function InteractiveStudio({
     setIsLoading(true);
 
     try {
-      // Only enhance these sections: summary, skills, experience, projects, awards, publications, volunteer
       const enhanceableBlocks = blocks.filter(b =>
         b.sectionKey !== 'header' &&
         b.sectionKey !== 'education' &&
         b.sectionKey !== 'certifications'
       );
 
-      // Build prompt with all blocks numbered
       const blocksText = enhanceableBlocks.map((block, idx) =>
         `[BLOCK ${idx + 1}]\n${block.text}`
       ).join('\n\n');
@@ -318,29 +444,21 @@ Respond with enhanced blocks in this exact format:
 
 Continue for all ${enhanceableBlocks.length} blocks.`;
 
-      // Single API call for all blocks
       const result = await api.enhanceResume(
         fullPrompt,
-        '', // Job description already in prompt
+        '',
         provider,
         model,
         apiKey
       );
 
       if (result.success) {
-        console.log('Raw API response:', result.enhanced_resume);
-
-        // Parse response to extract individual blocks
         const enhancedBlocks = parseEnhancedBlocks(result.enhanced_resume, enhanceableBlocks.length);
 
-        console.log('Parsed blocks:', enhancedBlocks);
-        console.log('Expected count:', enhanceableBlocks.length, 'Got:', enhancedBlocks.length);
-
-        // Update blocks with enhancements
         let enhancedIdx = 0;
         const updatedBlocks = blocks.map(block => {
           if (block.sectionKey === 'header' || block.sectionKey === 'education' || block.sectionKey === 'certifications') {
-            return block; // Skip these sections
+            return block;
           }
 
           const enhanced = enhancedBlocks[enhancedIdx];
@@ -353,10 +471,7 @@ Continue for all ${enhanceableBlocks.length} blocks.`;
           };
         });
 
-        console.log('Updated blocks:', updatedBlocks.filter(b => b.enhancedText));
         setBlocks(updatedBlocks);
-      } else {
-        console.error('API error:', result);
       }
     } catch (error) {
       console.error('Error enhancing blocks:', error);
@@ -366,7 +481,6 @@ Continue for all ${enhanceableBlocks.length} blocks.`;
     }
   };
 
-  // Re-enhance selected blocks (those rejected or pending)
   const handleReEnhance = async () => {
     if (!jobDescription || !apiKey) {
       alert('Please provide job description and API key');
@@ -376,7 +490,6 @@ Continue for all ${enhanceableBlocks.length} blocks.`;
     setIsLoading(true);
 
     try {
-      // Only re-enhance rejected or pending blocks (exclude header, education, certifications)
       const blocksToEnhance = blocks.filter(b =>
         b.sectionKey !== 'header' &&
         b.sectionKey !== 'education' &&
@@ -390,7 +503,6 @@ Continue for all ${enhanceableBlocks.length} blocks.`;
         return;
       }
 
-      // Build prompt with selected blocks
       const blocksText = blocksToEnhance.map((block, idx) =>
         `[BLOCK ${idx + 1}]\n${block.text}`
       ).join('\n\n');
@@ -418,7 +530,6 @@ Format:
       if (result.success) {
         const enhancedBlocks = parseEnhancedBlocks(result.enhanced_resume, blocksToEnhance.length);
 
-        // Update only the re-enhanced blocks
         let enhancedIdx = 0;
         const updatedBlocks = blocks.map(block => {
           const shouldUpdate = blocksToEnhance.find(b => b.id === block.id);
@@ -446,8 +557,6 @@ Format:
 
   const parseEnhancedBlocks = (response: string, expectedCount: number): string[] => {
     const blocks: string[] = [];
-
-    // Split by [BLOCK N] markers
     const blockPattern = /\[BLOCK \d+\]\s*\n([\s\S]*?)(?=\[BLOCK \d+\]|$)/g;
     let match;
 
@@ -458,7 +567,6 @@ Format:
       }
     }
 
-    // If parsing failed, try splitting by double newlines
     if (blocks.length === 0) {
       const fallbackBlocks = response.split(/\n\n+/).filter(b => b.trim() && !b.startsWith('[BLOCK'));
       return fallbackBlocks.slice(0, expectedCount);
@@ -506,41 +614,6 @@ Format:
     ));
   };
 
-  // Calculate ATS score for current state
-  const calculateCurrentScore = async () => {
-    if (!jobDescription || blocks.length === 0) return;
-
-    setIsCalculatingScore(true);
-    try {
-      // Build current resume text from accepted/enhanced blocks
-      const currentResume = blocks.map(b => {
-        if (b.status === 'accepted' && b.enhancedText) {
-          return b.enhancedText;
-        } else if (b.status === 'accepted') {
-          return b.text;
-        } else if (b.enhancedText) {
-          return b.enhancedText; // Show enhanced even if not accepted yet
-        } else {
-          return b.text;
-        }
-      }).join('\n');
-
-      const score = await api.calculateScore(currentResume, jobDescription);
-      setCurrentScore(score.overall_score);
-    } catch (error) {
-      console.error('Error calculating score:', error);
-    } finally {
-      setIsCalculatingScore(false);
-    }
-  };
-
-  // Recalculate score when blocks change
-  useEffect(() => {
-    if (blocks.length > 0 && jobDescription) {
-      calculateCurrentScore();
-    }
-  }, [blocks, jobDescription]);
-
   const handleAcceptAll = () => {
     setBlocks(blocks.map(b =>
       b.enhancedText ? { ...b, status: 'accepted' } : b
@@ -575,7 +648,7 @@ Format:
           <div className="mb-8 bg-white rounded-xl shadow-lg p-6 border border-gray-200">
             <FileUpload
               onFileUpload={handleFileUpload}
-              onJobDescriptionChange={setJobDescription}
+              onJobDescriptionChange={handleJobDescriptionChange}
               jobDescription={jobDescription}
               isLoading={isLoading}
               uploadedFileName={uploadedFileName}
@@ -602,7 +675,6 @@ Format:
     b.sectionKey !== 'certifications'
   ).length;
 
-  // Group blocks by section
   const groupedBlocks = blocks.reduce((acc, block) => {
     if (!acc[block.sectionKey]) {
       acc[block.sectionKey] = [];
@@ -613,7 +685,7 @@ Format:
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      {/* Header */}
+      {/* Header with ATS Score */}
       <header className="bg-white border-b border-gray-200 shadow-sm">
         <div className="px-8 py-5">
           <div className="flex items-center justify-between">
@@ -625,25 +697,54 @@ Format:
                 {enhancedCount > 0
                   ? `${acceptedCount} accepted • ${rejectedCount} rejected • ${pendingCount} pending`
                   : 'Click "Enhance All" to start'}
-                {currentScore > 0 && (
-                  <span className={`ml-3 font-semibold ${
-                    currentScore >= 80 ? 'text-green-600' : 
-                    currentScore >= 60 ? 'text-yellow-600' : 'text-red-600'
-                  }`}>
-                    • ATS Score: {currentScore}%
-                  </span>
-                )}
               </p>
             </div>
             <div className="flex items-center gap-4">
-              {currentScore > 0 && (
-                <div className={`px-4 py-2 rounded-lg font-bold text-lg ${
-                  currentScore >= 80 ? 'bg-green-100 text-green-700' : 
-                  currentScore >= 60 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'
-                }`}>
-                  {isCalculatingScore ? '⏳ Calculating...' : `${currentScore}%`}
+              {/* ATS Score Badges - Both Original and Current */}
+              {isCalculatingScore ? (
+                <div className="px-5 py-3 rounded-lg font-bold text-lg bg-gray-100 text-gray-700 border-2 border-gray-300">
+                  <span className="flex items-center gap-2">
+                    <span className="animate-spin">⏳</span>
+                    Calculating Scores...
+                  </span>
                 </div>
-              )}
+              ) : (originalScore > 0 || currentScore > 0) ? (
+                <div className="flex items-center gap-3">
+                  {/* Original Score */}
+                  <div className="text-center">
+                    <div className="text-xs text-gray-500 mb-1 font-semibold">ORIGINAL</div>
+                    <div className={`px-4 py-2 rounded-lg font-bold text-lg ${
+                      originalScore >= 80 ? 'bg-green-100 text-green-700 border-2 border-green-300' : 
+                      originalScore >= 60 ? 'bg-yellow-100 text-yellow-700 border-2 border-yellow-300' : 
+                      'bg-red-100 text-red-700 border-2 border-red-300'
+                    }`}>
+                      {originalScore}%
+                    </div>
+                  </div>
+
+                  {/* Arrow */}
+                  <div className="text-2xl text-gray-400">→</div>
+
+                  {/* Current/Enhanced Score */}
+                  <div className="text-center">
+                    <div className="text-xs text-gray-500 mb-1 font-semibold">ENHANCED</div>
+                    <div className={`px-4 py-2 rounded-lg font-bold text-lg ${
+                      currentScore >= 80 ? 'bg-green-100 text-green-700 border-2 border-green-300' : 
+                      currentScore >= 60 ? 'bg-yellow-100 text-yellow-700 border-2 border-yellow-300' : 
+                      'bg-red-100 text-red-700 border-2 border-red-300'
+                    }`}>
+                      {currentScore}%
+                    </div>
+                  </div>
+
+                  {/* Improvement Indicator */}
+                  {currentScore > originalScore && (
+                    <div className="ml-2 text-green-600 font-bold text-sm">
+                      +{(currentScore - originalScore).toFixed(1)}% ⬆
+                    </div>
+                  )}
+                </div>
+              ) : null}
               <div className="text-sm text-gray-500">
                 Using: <span className="font-semibold text-purple-600">{provider}</span> • {model.split('-')[0]}
               </div>
@@ -658,6 +759,8 @@ Format:
                   setOriginalResume(null);
                   setBlocks([]);
                   setUploadedFileName('');
+                  setOriginalScore(0);
+                  setCurrentScore(0);
                 }}
                 className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 text-sm font-medium transition-colors shadow-sm"
               >
@@ -676,7 +779,7 @@ Format:
           </label>
           <textarea
             value={jobDescription}
-            onChange={(e) => setJobDescription(e.target.value)}
+            onChange={(e) => handleJobDescriptionChange(e.target.value)}
             className="w-full h-40 px-4 py-3 border-2 border-blue-300 rounded-xl resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
             placeholder="Paste job description..."
           />
@@ -723,32 +826,25 @@ Format:
           {acceptedCount > 0 && (
             <button
               onClick={() => {
-                // Build final resume with section headers
                 let finalText = '';
-
-                // Group blocks by section
                 const grouped = blocks.reduce((acc, b) => {
                   if (!acc[b.sectionKey]) acc[b.sectionKey] = [];
                   acc[b.sectionKey].push(b);
                   return acc;
                 }, {} as Record<string, Block[]>);
 
-                // Render each section with header
                 const sectionOrder = ['header', 'summary', 'skills', 'experience', 'education', 'projects', 'certifications', 'awards', 'publications', 'volunteer', 'languages', 'interests'];
 
                 sectionOrder.forEach(sectionKey => {
                   const sectionBlocks = grouped[sectionKey];
                   if (!sectionBlocks || sectionBlocks.length === 0) return;
 
-                  // Add section header (except for contact/header)
                   if (sectionKey !== 'header') {
                     finalText += `\n${sectionBlocks[0].sectionTitle}\n`;
                     finalText += '─'.repeat(sectionBlocks[0].sectionTitle.length) + '\n\n';
                   }
 
-                  // Add blocks
                   if (sectionKey === 'experience') {
-                    // Group by job
                     const jobs = [...new Set(sectionBlocks.map(b => b.jobTitle))];
                     jobs.forEach(jobTitle => {
                       finalText += `${jobTitle}\n`;
@@ -756,23 +852,25 @@ Format:
                         .filter(b => b.jobTitle === jobTitle)
                         .forEach(block => {
                           const text = block.status === 'accepted' && block.enhancedText ? block.enhancedText : block.text;
-                          finalText += `• ${text}\n`;
+                          // Don't add bullet if text already starts with one
+                          const displayText = text.trim().startsWith('•') ? text : `• ${text}`;
+                          finalText += `${displayText}\n`;
                         });
                       finalText += '\n';
                     });
                   } else if (sectionKey === 'header') {
-                    // Contact info - no bullets
                     sectionBlocks.forEach(block => {
                       const text = block.status === 'accepted' && block.enhancedText ? block.enhancedText : block.text;
                       finalText += `${text}\n`;
                     });
                     finalText += '\n';
                   } else {
-                    // Other sections
                     sectionBlocks.forEach(block => {
                       const text = block.status === 'accepted' && block.enhancedText ? block.enhancedText : block.text;
                       if (sectionKey === 'skills') {
-                        finalText += `• ${text}\n`;
+                        // Don't add bullet if text already starts with one
+                        const displayText = text.trim().startsWith('•') ? text : `• ${text}`;
+                        finalText += `${displayText}\n`;
                       } else {
                         finalText += `${text}\n`;
                       }
@@ -804,10 +902,8 @@ Format:
             📝 Review Enhancements ({enhancedCount}/{totalEnhanceable} enhanced)
           </h3>
 
-          {/* Render sections in groups */}
           {Object.entries(groupedBlocks).map(([sectionKey, sectionBlocks]) => (
             <div key={sectionKey} className="mb-8">
-              {/* Section Header Box */}
               <div className="bg-gradient-to-r from-purple-100 to-pink-100 border-2 border-purple-300 rounded-lg p-3 mb-3">
                 <h4 className="text-base font-bold text-purple-900 uppercase tracking-wide">
                   {sectionBlocks[0].sectionTitle}
@@ -822,26 +918,20 @@ Format:
                 </p>
               </div>
 
-              {/* Blocks in this section */}
               {sectionKey === 'experience' ? (
-                /* Experience: Group by jobs with subsection boxes */
                 (() => {
                   const jobs = [...new Set(sectionBlocks.map(b => b.jobTitle))];
                   return jobs.map(jobTitle => {
                     const jobBlocks = sectionBlocks.filter(b => b.jobTitle === jobTitle);
                     return (
                       <div key={jobTitle} className="mb-4">
-                        {/* Job Subsection Box */}
                         <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border-2 border-indigo-200 rounded-lg p-2 mb-2">
-                          <h5 className="text-sm font-bold text-indigo-900">
-                            {jobTitle}
-                          </h5>
+                          <h5 className="text-sm font-bold text-indigo-900">{jobTitle}</h5>
                           <p className="text-xs text-indigo-600 mt-1">
                             {jobBlocks.length} {jobBlocks.length === 1 ? 'bullet' : 'bullets'}
                           </p>
                         </div>
 
-                        {/* Bullets for this job */}
                         {jobBlocks.map((block) => (
                           <div
                             key={block.id}
@@ -855,13 +945,11 @@ Format:
                                 : 'border-gray-200 bg-white'
                             }`}
                           >
-                            {/* Original */}
                             <div className="mb-3">
                               <label className="text-xs font-semibold text-gray-600 uppercase mb-1 block">Original:</label>
                               <p className="text-sm text-gray-800 leading-relaxed">{block.text}</p>
                             </div>
 
-                            {/* Enhanced */}
                             {block.enhancedText && (
                               <div className="mb-3">
                                 <label className="text-xs font-semibold text-green-700 uppercase mb-1 block">Enhanced:</label>
@@ -893,7 +981,6 @@ Format:
                               </div>
                             )}
 
-                            {/* Actions */}
                             {block.enhancedText && block.status === 'enhanced' && (
                               <div className="flex gap-2 mt-3">
                                 <button
@@ -917,7 +1004,6 @@ Format:
                               </div>
                             )}
 
-                            {/* Status Badge with Change Option */}
                             {block.status === 'accepted' && (
                               <div className="mt-3">
                                 <div className="text-center text-sm font-semibold text-green-700 bg-green-200 py-2 rounded mb-2">
@@ -951,7 +1037,6 @@ Format:
                   });
                 })()
               ) : (
-                /* Other sections: Regular blocks */
                 sectionBlocks.map((block) => (
                   <div
                     key={block.id}
@@ -965,13 +1050,11 @@ Format:
                         : 'border-gray-200 bg-white'
                     }`}
                   >
-                    {/* Original */}
                     <div className="mb-3">
                       <label className="text-xs font-semibold text-gray-600 uppercase mb-1 block">Original:</label>
                       <p className="text-sm text-gray-800 leading-relaxed">{block.text}</p>
                     </div>
 
-                    {/* Enhanced (if available) */}
                     {block.enhancedText && (
                       <div className="mb-3">
                         <label className="text-xs font-semibold text-green-700 uppercase mb-1 block">Enhanced:</label>
@@ -1003,7 +1086,6 @@ Format:
                       </div>
                     )}
 
-                    {/* Actions - Only for sections that get enhanced */}
                     {sectionKey !== 'header' && sectionKey !== 'education' && sectionKey !== 'certifications' && block.enhancedText && block.status === 'enhanced' && (
                       <div className="flex gap-2 mt-3">
                         <button
@@ -1027,7 +1109,6 @@ Format:
                       </div>
                     )}
 
-                    {/* Edit-only button for header/education/certifications */}
                     {(sectionKey === 'header' || sectionKey === 'education' || sectionKey === 'certifications') && (
                       <div className="mt-3">
                         {editingBlockId === block.id ? (
@@ -1072,7 +1153,6 @@ Format:
                       </div>
                     )}
 
-                    {/* Status Badge with Change Option */}
                     {block.status === 'accepted' && (
                       <div className="mt-3">
                         <div className="text-center text-sm font-semibold text-green-700 bg-green-200 py-2 rounded mb-2">
@@ -1111,58 +1191,70 @@ Format:
           <h3 className="text-lg font-bold mb-4 text-gray-900">📄 Final Resume Preview</h3>
 
           <div className="bg-white p-6 rounded-lg border-2 border-gray-200 min-h-[600px]">
-            {/* Header */}
-            {originalResume.sections.header?.lines && originalResume.sections.header.lines.length > 0 && (
-              <div className="mb-6 pb-4 border-b-2 border-gray-300">
-                {originalResume.sections.header.lines.map((line, idx) => (
-                  <div key={idx} className="text-center">
-                    {idx === 0 ? (
-                      <h2 className="text-2xl font-bold text-gray-900">{line}</h2>
-                    ) : (
-                      <p className="text-sm text-gray-700">{line}</p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Render each section */}
-            {['summary', 'skills', 'experience', 'education', 'projects', 'certifications', 'awards', 'publications', 'volunteer', 'languages', 'interests'].map(sectionKey => {
+            {/* Render each section including header */}
+            {['header', 'summary', 'skills', 'experience', 'education', 'projects', 'certifications', 'awards', 'publications', 'volunteer', 'languages', 'interests'].map(sectionKey => {
               const sectionBlocks = groupedBlocks[sectionKey];
               if (!sectionBlocks || sectionBlocks.length === 0) return null;
 
               return (
                 <div key={sectionKey} className="mb-6">
-                  <h3 className="text-base font-bold text-gray-900 mb-2 uppercase tracking-wide border-b border-gray-300 pb-1">
-                    {sectionBlocks[0].sectionTitle}
-                  </h3>
-
-                  {sectionKey === 'experience' ? (
-                    // Group by job
-                    (() => {
-                      const jobs = [...new Set(sectionBlocks.map(b => b.jobTitle))];
-                      return jobs.map(jobTitle => (
-                        <div key={jobTitle} className="mb-4">
-                          <h4 className="text-sm font-bold text-gray-900 mb-2">{jobTitle}</h4>
-                          {sectionBlocks
-                            .filter(b => b.jobTitle === jobTitle)
-                            .map(block => (
-                              <div key={block.id} className="text-sm text-gray-800 mb-1 pl-4">
-                                • {block.status === 'accepted' && block.enhancedText ? block.enhancedText : block.text}
-                              </div>
-                            ))
-                          }
-                        </div>
-                      ));
-                    })()
+                  {sectionKey === 'header' ? (
+                    // Header/Contact - centered, no section title
+                    <div className="mb-6 pb-4 border-b-2 border-gray-300">
+                      {sectionBlocks.map((block, idx) => {
+                        const lines = block.text.split('\n');
+                        return lines.map((line, lineIdx) => (
+                          <div key={`${idx}-${lineIdx}`} className="text-center">
+                            {lineIdx === 0 ? (
+                              <h2 className="text-2xl font-bold text-gray-900">{line}</h2>
+                            ) : (
+                              <p className="text-sm text-gray-700">{line}</p>
+                            )}
+                          </div>
+                        ));
+                      })}
+                    </div>
                   ) : (
-                    // Regular blocks
-                    sectionBlocks.map(block => (
-                      <div key={block.id} className="text-sm text-gray-800 mb-1">
-                        {sectionKey === 'skills' ? '• ' : ''}
-                        {block.status === 'accepted' && block.enhancedText ? block.enhancedText : block.text}
-                      </div>
-                    ))
+                    <>
+                      <h3 className="text-base font-bold text-gray-900 mb-2 uppercase tracking-wide border-b border-gray-300 pb-1">
+                        {sectionBlocks[0].sectionTitle}
+                      </h3>
+
+                      {sectionKey === 'experience' ? (
+                        (() => {
+                          const jobs = [...new Set(sectionBlocks.map(b => b.jobTitle))];
+                          return jobs.map(jobTitle => (
+                            <div key={jobTitle} className="mb-4">
+                              <h4 className="text-sm font-bold text-gray-900 mb-2">{jobTitle}</h4>
+                              {sectionBlocks
+                                .filter(b => b.jobTitle === jobTitle)
+                                .map(block => {
+                                  const text = block.status === 'accepted' && block.enhancedText ? block.enhancedText : block.text;
+                                  // Don't add bullet if text already starts with one
+                                  const displayText = text.trim().startsWith('•') ? text : `• ${text}`;
+                                  return (
+                                    <div key={block.id} className="text-sm text-gray-800 mb-1 pl-4">
+                                      {displayText}
+                                    </div>
+                                  );
+                                })
+                              }
+                            </div>
+                          ));
+                        })()
+                      ) : (
+                        sectionBlocks.map(block => {
+                          const text = block.status === 'accepted' && block.enhancedText ? block.enhancedText : block.text;
+                          // Don't add bullet if text already starts with one
+                          const displayText = sectionKey === 'skills' && !text.trim().startsWith('•') ? `• ${text}` : text;
+                          return (
+                            <div key={block.id} className="text-sm text-gray-800 mb-1">
+                              {displayText}
+                            </div>
+                          );
+                        })
+                      )}
+                    </>
                   )}
                 </div>
               );

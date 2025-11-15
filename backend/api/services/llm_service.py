@@ -1,5 +1,5 @@
 """
-LLM Enhancement Service - Using original working prompts
+LLM Enhancement Service - FOCUS ON ATS SCORE IMPROVEMENT
 Supports OpenAI, Claude, and OpenRouter
 """
 import openai
@@ -48,10 +48,10 @@ class LLMService:
             }
 
     def _build_prompt(self, resume: str, job_desc: str) -> str:
-        """Build the enhancement prompt - STRICT LENGTH CONTROL"""
+        """Build the enhancement prompt - FOCUS ON ATS SCORE IMPROVEMENT"""
         original_word_count = len(resume.split())
 
-        return f"""You are an expert resume writer and ATS optimization specialist. Your goal is to make STRATEGIC, TARGETED enhancements while preserving the resume's core structure and strong existing content.
+        return f"""You are an expert ATS (Applicant Tracking System) optimizer. Your PRIMARY GOAL is to MAXIMIZE the ATS score by strategically matching the resume to the job description.
 
 Job Description:
 {job_desc}
@@ -59,83 +59,90 @@ Job Description:
 Current Resume (Word count: {original_word_count}):
 {resume}
 
-CRITICAL LENGTH REQUIREMENT:
-• Target word count: {original_word_count} words (±30 words acceptable)
-• Current: {original_word_count} words → Target range: {original_word_count - 30} to {original_word_count + 30} words
-• Prefer staying closer to original, but ±30 is acceptable
-• DO NOT remove bullet points or job experiences
-• If you add keywords, compensate by being more concise elsewhere
+PRIMARY OBJECTIVE: IMPROVE ATS SCORE
+The ATS scoring system evaluates:
+1. Keyword Matching (50 points) - Most important!
+2. Essential Sections (20 points) - Experience, Education, Skills, Contact
+3. Action Verbs (15 points) - Led, Developed, Achieved, etc.
+4. Quantifiable Achievements (10 points) - Numbers, percentages, metrics
+5. Resume Length (5 points) - Optimal: 450-750 words
 
-ENHANCEMENT STRATEGY:
+YOUR MISSION: Add as many relevant keywords from the job description as possible while keeping the resume authentic and maintaining similar length.
 
-1. ANALYZE THE JOB DESCRIPTION - Extract Keywords:
-   • Identify key technologies, tools, frameworks, libraries from JD
-   • Note methodologies (Agile, TDD, CI/CD, DevOps)
-   • Find required soft skills and domain knowledge
-   • Identify industry-specific terminology
+CRITICAL ATS OPTIMIZATION STRATEGY:
 
-2. STRATEGIC ENHANCEMENTS (What to Change):
-   A) Replace vague words with JD-specific keywords:
-      - "databases" → specific DB names from JD
-      - "worked on" → specific action verb + technology
-      - "various projects" → name actual project types from JD
-   
-   B) Add missing JD keywords naturally:
-      - Weave into existing bullet points
-      - Don't create new bullet points
-      - Replace generic terms with specific ones
-   
-   C) Quantify where possible:
-      - Add metrics to vague statements
-      - Add scale/impact to existing points
+1. EXTRACT ALL KEYWORDS FROM JOB DESCRIPTION:
+   • Technologies: (Python, React, AWS, PostgreSQL, Docker, Kubernetes)
+   • Tools & Frameworks: (Django, Flask, Next.js, TensorFlow)
+   • Methodologies: (Agile, Scrum, CI/CD, DevOps, TDD)
+   • Skills: (Leadership, Communication, Problem-solving)
+   • Domain Terms: (Machine Learning, API Development, Cloud Architecture)
+   • Certifications: (AWS Certified, PMP, etc.)
 
-3. PRESERVATION RULES (What NOT to Change):
-   ✗ DO NOT remove bullet points
-   ✗ DO NOT remove job experiences
-   ✗ DO NOT shorten sections significantly
-   ✗ DO NOT change structure, job titles, dates, company names
-   ✗ DO NOT remove strong achievements
-   ✗ Keep ALL contact information unchanged
-   ✗ Keep ALL education, certifications exactly as written
+2. KEYWORD INTEGRATION (MAXIMIZE SCORE):
+   A) Replace generic terms with JD-specific keywords:
+      ❌ "worked with databases" 
+      ✅ "developed applications using PostgreSQL, MongoDB, Redis"
+      
+   B) Add missing JD keywords naturally into existing bullets:
+      ❌ "Led development team"
+      ✅ "Led Agile development team using Scrum, CI/CD, Docker, Kubernetes"
+      
+   C) Use exact phrases from JD when possible:
+      - If JD says "RESTful APIs" → use "RESTful APIs" not "REST API"
+      - If JD says "AWS Lambda" → use "AWS Lambda" not "serverless functions"
 
-4. LENGTH DISCIPLINE (CRITICAL):
-   For EVERY word you ADD, you MUST:
-   • Remove filler words ("various", "multiple", "different")
-   • Remove redundant phrases ("in order to" → "to")
-   • Combine similar points if absolutely needed
-   • Make language more concise
-   
-   Example of length-neutral enhancement:
-   BEFORE (10 words): "Worked on various projects using different databases and tools"
-   AFTER (10 words): "Developed applications using PostgreSQL, MongoDB, Redis, Docker"
-   
-   Example of WRONG approach (reduced words):
-   BEFORE (10 words): "Worked on various projects using different databases and tools"  
-   AFTER (5 words): "Developed database applications" ← WRONG! Too short!
+3. ACTION VERBS (BOOST SCORE +15 points):
+   Replace weak verbs with strong action verbs:
+   ❌ worked, did, was responsible for, helped
+   ✅ achieved, led, developed, implemented, optimized, delivered, spearheaded, architected
 
-5. AUTHENTICITY:
-   • Every enhancement must be truthful
-   • Only add keywords that fit the actual experience
-   • If JD keyword doesn't fit, don't force it
+4. QUANTIFY EVERYTHING (BOOST SCORE +10 points):
+   Add metrics wherever truthful:
+   ❌ "Improved system performance"
+   ✅ "Improved system performance by 40%, reducing response time from 2s to 1.2s"
 
-FINAL VERIFICATION BEFORE RETURNING:
-❗ Word count within {original_word_count} ± 30 words? (Count the words!)
-❗ Did I preserve ALL bullet points?
-❗ Did I preserve ALL job experiences?
-❗ Did I enhance weak points with JD keywords?
-❗ Are changes truthful and based on existing experience?
+5. LENGTH CONTROL:
+   • Target: {original_word_count} ± 30 words
+   • Current: {original_word_count} → Range: {original_word_count - 30} to {original_word_count + 30}
+   • For every keyword you ADD, remove filler words ("various", "multiple", "different")
+   • Keep ALL bullet points and job experiences
+
+6. PRESERVE (CRITICAL):
+   ✓ KEEP contact information (email, phone, LinkedIn) at the top - DO NOT REMOVE
+   ✓ KEEP education and certifications exactly as written
+   ✓ KEEP job titles, companies, and dates
+   ✓ KEEP existing strong bullet points
+   ✗ DO NOT fabricate experience
+
+7. ATS SECTION HEADERS:
+   Ensure these sections exist with standard headers:
+   • Contact info at top (name, phone, email, LinkedIn)
+   • EXPERIENCE or WORK EXPERIENCE
+   • EDUCATION
+   • SKILLS or TECHNICAL SKILLS
+   • SUMMARY or PROFESSIONAL SUMMARY (if present)
+
+EXAMPLE OF MAXIMUM ATS OPTIMIZATION:
+
+BEFORE (Low ATS Score):
+"Worked on web applications using various technologies. Helped team with projects."
+
+AFTER (High ATS Score - added 10+ JD keywords):
+"Developed scalable web applications using React, Next.js, TypeScript, Node.js, and PostgreSQL. Led Agile team implementing CI/CD pipelines with Docker, Kubernetes, AWS, improving deployment efficiency by 60%."
+
+FINAL CHECKLIST BEFORE RETURNING:
+✓ Added MAXIMUM number of JD keywords naturally?
+✓ Replaced ALL weak verbs with action verbs?
+✓ Added numbers/metrics where truthful?
+✓ Used exact JD phrases when possible?
+✓ Word count within ±30 words?
+✓ Preserved contact information at top?
+✓ Preserved ALL structure, education, job titles?
+✓ Will this score HIGHER on ATS than original?
 
 RESPONSE FORMAT:
-Return ONLY the enhanced resume text maintaining EXACT same structure and line breaks.
-NO preamble, NO explanations, NO markdown - just the resume content.
-Keep all bullet points, headers, and formatting intact.
-
-CRITICAL - DO NOT ADD ANY ANNOTATIONS:
-❌ DO NOT add phrases like "added from JD", "enhanced", "[keyword]", or any meta-commentary
-❌ DO NOT add brackets, parentheses, or notes about what was changed
-❌ Return ONLY the actual resume text as it should appear
-❌ NO explanatory text before or after the resume content
-✅ The output should look like a real, polished resume - not a marked-up draft"""
+Return ONLY the enhanced resume text. NO preamble, NO explanations, NO markdown - just the resume content with all formatting and contact information intact."""
 
     def _call_openai(self, resume: str, job_desc: str, model: str, api_key: str) -> str:
         """Call OpenAI API"""
@@ -147,7 +154,7 @@ CRITICAL - DO NOT ADD ANY ANNOTATIONS:
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an expert resume optimizer who extracts keywords from job descriptions and makes strategic, minimal enhancements while preserving authenticity."
+                    "content": "You are an expert ATS optimizer who maximizes keyword matching and scoring. Your goal is to make every resume score HIGHER on ATS systems."
                 },
                 {"role": "user", "content": prompt}
             ],
@@ -174,8 +181,8 @@ CRITICAL - DO NOT ADD ANY ANNOTATIONS:
         """Call OpenRouter API"""
         original_word_count = len(resume.split())
 
-        # Simplified prompt for OpenRouter free models
-        prompt = f"""Enhance this resume for the job description below. Make strategic improvements while keeping word count within {original_word_count} ± 10 words.
+        # ATS-focused prompt for OpenRouter
+        prompt = f"""MAXIMIZE ATS SCORE: Enhance this resume to match the job description below.
 
 Job Description:
 {job_desc}
@@ -183,13 +190,19 @@ Job Description:
 Resume:
 {resume}
 
-Focus on:
-1. Adding relevant keywords from JD
-2. Quantifying achievements
-3. Enhancing weak bullet points
-4. Preserving strong content
+INSTRUCTIONS:
+1. Extract ALL keywords from job description (technologies, tools, skills)
+2. Add as many JD keywords as possible into existing bullet points
+3. Replace weak verbs with: achieved, led, developed, implemented, optimized
+4. Add metrics/numbers where truthful
+5. Keep word count within {original_word_count} ± 20 words
+6. PRESERVE contact information at top (name, phone, email)
+7. PRESERVE all job titles, companies, dates
+8. PRESERVE education section
 
-Return only the enhanced resume."""
+GOAL: Make ATS score go UP by adding maximum relevant keywords.
+
+Return only the enhanced resume with all contact info intact."""
 
         headers = {
             "Authorization": f"Bearer {api_key}",
