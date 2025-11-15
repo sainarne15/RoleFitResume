@@ -198,17 +198,3 @@ curl -X POST http://localhost:8000/api/enhance \
     "api_key": "your-key"
   }'
 ```
-
-## What's Different from Streamlit Version
-
-### Improvements:
-✅ Better PDF parsing (preserves exact layout)
-✅ Proper section detection and ordering
-✅ Detects multiple jobs and separates them
-✅ Better bullet point identification
-✅ Modular code (easy to maintain)
-✅ Real API (can scale)
-✅ Frontend will have rich editing (not possible in Streamlit)
-
-### Next: Build Frontend
-Ready to build Quick Enhance mode UI?
