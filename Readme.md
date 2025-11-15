@@ -1,6 +1,5 @@
 # Resume ATS Enhancer - Next.js + FastAPI
 
-## What's Built So Far
 
 ### ✅ Backend (Python/FastAPI) - COMPLETE
 - **Enhanced PDF/Word Extraction** - Preserves layout and structure
@@ -10,8 +9,7 @@
 - **LLM Service** - Supports OpenAI, Claude, OpenRouter with YOUR working prompts
 - **API Routes** - Document upload, enhancement, scoring
 
-### 🚧 Frontend (Next.js) - NEXT STEP
-Will build:
+### 🚧 Frontend (Next.js)
 1. Quick Enhance mode (side-by-side view)
 2. Interactive Studio (Git diff-style editing)
 
